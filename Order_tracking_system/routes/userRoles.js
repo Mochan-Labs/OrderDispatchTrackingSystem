@@ -17,32 +17,44 @@ router.get('/master/user-roles', ensureAuth, (req, res) => {
   res.render('master/user_roles', { user: req.session.user });
 });
 
+// --- REST API ---
+
+// GET all user roles
 router.get('/api/user-roles', ensureAdmin, async (req, res) => {
   try {
-    const r = await pool.query('SELECT * FROM odts.user_roles ORDER BY role_id');
+    const r = await pool.query(`
+      SELECT
+        ur.*,
+        u.user_login_name AS updated_by
+      FROM odts.user_roles ur
+      LEFT JOIN odts.users u ON u.user_id = ur.updated_by
+      ORDER BY ur.role_name
+    `);
     res.json(r.rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST create user roles
 router.post('/api/user-roles', ensureAdmin, async (req, res) => {
   const { role_name, role_desc } = req.body;
   if (!role_name) return res.status(400).json({ error: 'Role name required' });
   try {
     const r = await pool.query(
-      `INSERT INTO odts.user_roles(role_name, role_desc, created_at, updated_at) VALUES($1,$2,now(),now()) RETURNING *`,
-      [role_name.trim().toUpperCase(), role_desc||'']
+      `INSERT INTO odts.user_roles(role_name, role_desc, created_by, updated_by, created_at, updated_at) VALUES($1,$2,$3,$4,now(),now()) RETURNING *`,
+      [role_name.trim().toUpperCase(), role_desc||'', req.session.user.id, req.session.user.id]
     );
     res.status(201).json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// PUT update user roles
 router.put('/api/user-roles/:id', ensureAdmin, async (req, res) => {
   const { role_name, role_desc } = req.body;
   if (!role_name) return res.status(400).json({ error: 'Role name required' });
   try {
     const r = await pool.query(
-      `UPDATE odts.user_roles SET role_name=$1, role_desc=$2, updated_at=now() WHERE role_id=$3 RETURNING *`,
-      [role_name.trim().toUpperCase(), role_desc||'', req.params.id]
+      `UPDATE odts.user_roles SET role_name=$1, role_desc=$2, updated_by=$3, updated_at=now() WHERE role_id=$4 RETURNING *`,
+      [role_name.trim().toUpperCase(), role_desc||'', req.session.user.id, req.params.id]
     );
     if (!r.rows.length) return res.status(404).json({ error: 'Role not found' });
     res.json(r.rows[0]);

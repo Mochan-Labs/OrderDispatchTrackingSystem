@@ -28,7 +28,7 @@ function App(){
   const [showModal,setShowModal]=useState(false); const [form,setForm]=useState(EMPTY);
   const [editId,setEditId]=useState(null); const [saving,setSaving]=useState(false);
   const [toast,setToast]=useState({msg:'',type:'success'});
-  const [sortCol,setSortCol]=useState('role_id'); const [sortAsc,setSortAsc]=useState(true);
+  const [sortCol,setSortCol]=useState('role_name'); const [sortAsc,setSortAsc]=useState(true);
 
   const notify=(msg,type='success')=>{setToast({msg,type});setTimeout(()=>setToast({msg:''}),4000);};
   const load=async()=>{setLoading(true);try{
@@ -40,7 +40,7 @@ function App(){
 
   const openAdd=()=>{setForm(EMPTY);setEditId(null);setShowModal(true);};
   const exportExcel=()=>{
-    const data=filtered.map(r=>({'ID':r.role_id,'Role Name':r.role_name,'Description':r.role_desc||'','Created At':r.created_at?new Date(r.created_at).toLocaleDateString():''}) );
+    const data=filtered.map(r=>({'Role Name':r.role_name,'Description':r.role_desc||'','Updated At':r.updated_at?new Date(r.updated_at).toLocaleDateString():'','Updated By':r.updated_by||''}) );
     const ws=XLSX.utils.json_to_sheet(data); const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,'UserRoles'); XLSX.writeFile(wb,'UserRoles.xlsx');
   };
@@ -70,25 +70,25 @@ function App(){
       </div>
       <div className="card-body">
         <div className="row mb-3">
-          <div className="col-md-4"><input className="form-control" placeholder="Search…" value={search} onChange={e=>setSearch(e.target.value)}/></div>
+          <div className="col-md-4"><input className="form-control" placeholder="Search by role name or description" value={search} onChange={e=>setSearch(e.target.value)}/></div>
           <div className="col text-end text-muted small align-self-center">{filtered.length} record{filtered.length!==1?'s':''}</div>
         </div>
         {loading?<div className="text-center py-5"><div className="spinner-border text-primary"></div></div>:(
         <div className="table-responsive">
           <table className="table table-hover table-bordered align-middle mb-0">
             <thead className="table-light"><tr>
-              <th style={{cursor:'pointer',width:'60px'}} onClick={()=>sort('role_id')}>ID<SI col="role_id"/></th>
               <th style={{cursor:'pointer'}} onClick={()=>sort('role_name')}>Role Name<SI col="role_name"/></th>
               <th>Description</th>
-              <th style={{cursor:'pointer',width:'130px'}} onClick={()=>sort('updated_at')}>Updated<SI col="updated_at"/></th>
+              <th style={{cursor:'pointer',width:'130px'}} onClick={()=>sort('updated_at')}>Updated At<SI col="updated_at"/></th>
+              <th style={{cursor:'pointer',width:'130px'}} onClick={()=>sort('updated_by')}>Updated By<SI col="updated_by"/></th>
               <th style={{width:'90px',textAlign:'center'}}>Action</th>
             </tr></thead>
             <tbody>{filtered.length===0?<tr><td colSpan="5" className="text-center text-muted py-4">No roles found</td></tr>:
               filtered.map(r=><tr key={r.role_id}>
-                <td>{r.role_id}</td>
                 <td><span className="badge bg-primary">{r.role_name}</span></td>
                 <td>{r.role_desc||<span className="text-muted">—</span>}</td>
                 <td>{fmt(r.updated_at)}</td>
+                <td>{r.updated_by||<span className="text-muted">—</span>}</td>
                 <td className="text-center"><button className="btn btn-outline-primary btn-sm" onClick={()=>openEdit(r)}>Edit</button></td>
               </tr>)
             }</tbody>

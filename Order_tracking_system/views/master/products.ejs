@@ -42,7 +42,7 @@ function ProductsApp() {
   const [editId, setEditId]       = useState(null);
   const [saving, setSaving]       = useState(false);
   const [toast, setToast]         = useState({ msg: '', type: 'success' });
-  const [sortCol, setSortCol]     = useState('product_id');
+  const [sortCol, setSortCol]     = useState('product_name');
   const [sortAsc, setSortAsc]     = useState(true);
 
   const showToast = (msg, type = 'success') => {
@@ -67,11 +67,11 @@ function ProductsApp() {
 
   const exportExcel = () => {
     const data = filtered.map(p => ({
-      'ID': p.product_id,
       'Product Name': p.product_name,
       'Description': p.product_desc || '',
       'Active': p.product_is_active_flag ? 'Yes' : 'No',
-      'Created At': p.created_at ? new Date(p.created_at).toLocaleDateString() : '',
+      'Updated At': p.updated_at ? new Date(p.updated_at).toLocaleDateString() : '',
+      'Updated By': p.updated_by || '',
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -155,7 +155,7 @@ function ProductsApp() {
             <div className="col-md-4">
               <input
                 className="form-control"
-                placeholder="Search by name or description…"
+                placeholder="Search by product name or description"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
@@ -175,11 +175,11 @@ function ProductsApp() {
               <table className="table table-hover table-bordered align-middle mb-0">
                 <thead className="table-light">
                   <tr>
-                    <th style={{cursor:'pointer', width:'70px'}} onClick={() => handleSort('product_id')}>ID <SortIcon col="product_id"/></th>
                     <th style={{cursor:'pointer'}} onClick={() => handleSort('product_name')}>Product Name <SortIcon col="product_name"/></th>
                     <th onClick={() => handleSort('product_desc')} style={{cursor:'pointer'}}>Description <SortIcon col="product_desc"/></th>
                     <th style={{width:'100px', textAlign:'center', cursor:'pointer'}} onClick={() => handleSort('product_is_active_flag')}>Status <SortIcon col="product_is_active_flag"/></th>
-                    <th style={{width:'160px'}}>Updated At</th>
+                    <th style={{cursor:'pointer', width:'160px'}} onClick={() => handleSort('updated_at')}>Updated At <SortIcon col="updated_at"/></th>
+                    <th style={{cursor:'pointer', width:'160px'}} onClick={() => handleSort('updated_by')}>Updated By <SortIcon col="updated_by"/></th>
                     <th style={{width:'90px', textAlign:'center'}}>Action</th>
                   </tr>
                 </thead>
@@ -188,7 +188,6 @@ function ProductsApp() {
                     <tr><td colSpan="6" className="text-center text-muted py-4">No products found</td></tr>
                   ) : filtered.map(p => (
                     <tr key={p.product_id}>
-                      <td>{p.product_id}</td>
                       <td className="fw-semibold">{p.product_name}</td>
                       <td>{p.product_desc || <span className="text-muted">—</span>}</td>
                       <td className="text-center">
@@ -196,7 +195,8 @@ function ProductsApp() {
                           ? <span className="badge bg-success">Active</span>
                           : <span className="badge bg-secondary">Inactive</span>}
                       </td>
-                      <td className="text-muted small">{new Date(p.updated_at).toLocaleString()}</td>
+                      <td className="text-muted small">{new Date(p.updated_at).toLocaleDateString()}</td>
+                      <td>{p.updated_by || <span className="text-muted">—</span>}</td>
                       <td className="text-center">
                         <button className="btn btn-outline-primary btn-sm" onClick={() => openEdit(p)}>Edit</button>
                       </td>
