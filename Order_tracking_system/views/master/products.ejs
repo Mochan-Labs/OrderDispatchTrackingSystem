@@ -188,14 +188,14 @@ function ProductsApp() {
                     <tr><td colSpan="6" className="text-center text-muted py-4">No products found</td></tr>
                   ) : filtered.map(p => (
                     <tr key={p.product_id}>
-                      <td className="fw-semibold">{p.product_name}</td>
+                      <td><span className="badge bg-primary">{p.product_name}</span></td>
                       <td>{p.product_desc || <span className="text-muted">—</span>}</td>
                       <td className="text-center">
                         {p.product_is_active_flag
                           ? <span className="badge bg-success">Active</span>
                           : <span className="badge bg-secondary">Inactive</span>}
                       </td>
-                      <td className="text-muted small">{new Date(p.updated_at).toLocaleDateString()}</td>
+                      <td>{new Date(p.updated_at).toLocaleDateString()}</td>
                       <td>{p.updated_by || <span className="text-muted">—</span>}</td>
                       <td className="text-center">
                         <button className="btn btn-outline-primary btn-sm" onClick={() => openEdit(p)}>Edit</button>

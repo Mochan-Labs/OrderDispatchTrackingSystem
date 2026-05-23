@@ -17,7 +17,10 @@
             <div class="alert alert-danger"><%= error %></div>
           <% } %>
           <% if (success) { %>
-            <div class="alert alert-success"><%= success %></div>
+            <div class="alert alert-success d-flex align-items-center justify-content-between">
+              <span><%= success %></span>
+              <a href="/master/users" class="btn btn-sm btn-primary">← Back to Login Users</a>
+            </div>
           <% } %>
 
           <form method="post" action="/signup">

@@ -60,9 +60,12 @@ router.get('/api/dealers', ensureAdminOrOffice, async (req, res) => {
               ${hasLocationId ? 'l.location_name' : 'NULL::varchar AS location_name'},
               d.dealer_address,
               d.dealer_daily_limit, d.dealer_monthly_target,
-              d.dealer_is_active_flag, d.created_at, d.updated_at
+              d.dealer_is_active_flag, d.created_at, d.updated_at,
+              d.updated_by,
+              ub.user_login_name AS updated_by_user_login_name
        FROM odts.dealers d
        LEFT JOIN odts.users u ON u.dealer_id = d.dealer_id
+       LEFT JOIN odts.users ub ON d.updated_by = ub.user_id
        ${hasLocationId ? 'LEFT JOIN odts.locations l ON l.location_id = d.location_id' : ''}
        ORDER BY d.dealer_id, u.user_id`);
     res.json(r.rows);
@@ -88,6 +91,7 @@ router.post('/api/dealers', ensureAdmin, async (req, res) => {
           dealer_is_active_flag, dealer_daily_limit, dealer_monthly_target } = req.body;
   if (!dealer_name) return res.status(400).json({ error: 'Dealer name required' });
   try {
+    const actorId = req.session?.user?.id || 0;
     const dealerCompanyCol = await getFirstExistingColumn('dealers', ['dealer_company_name', 'dealer_company']);
     const hasDealerEmail = await hasColumn('dealers', 'dealer_email');
     const hasLocationId = await hasColumn('dealers', 'location_id');
@@ -114,9 +118,9 @@ router.post('/api/dealers', ensureAdmin, async (req, res) => {
       placeholders.push(`$${i++}`);
     }
 
-    cols.push('dealer_code', 'dealer_phone', 'dealer_address', 'dealer_is_active_flag', 'dealer_daily_limit', 'dealer_monthly_target', 'created_at', 'updated_at');
-    values.push(dealer_code||'', dealer_phone||'', dealer_address||'', dealer_is_active_flag !== false, dealer_daily_limit||0, dealer_monthly_target||0);
-    placeholders.push(`$${i++}`, `$${i++}`, `$${i++}`, `$${i++}`, `$${i++}`, `$${i++}`, 'now()', 'now()');
+    cols.push('dealer_code', 'dealer_phone', 'dealer_address', 'dealer_is_active_flag', 'dealer_daily_limit', 'dealer_monthly_target', 'created_by', 'updated_by', 'created_at', 'updated_at');
+    values.push(dealer_code||'', dealer_phone||'', dealer_address||'', dealer_is_active_flag !== false, dealer_daily_limit||0, dealer_monthly_target||0, actorId, actorId);
+    placeholders.push(`$${i++}`, `$${i++}`, `$${i++}`, `$${i++}`, `$${i++}`, `$${i++}`, `$${i++}`, `$${i++}`, 'now()', 'now()');
 
     const r = await pool.query(
       `INSERT INTO odts.dealers (${cols.join(', ')})
@@ -133,6 +137,7 @@ router.put('/api/dealers/:id', ensureAdminOrOffice, async (req, res) => {
           dealer_is_active_flag, dealer_daily_limit, dealer_monthly_target } = req.body;
   if (!dealer_name) return res.status(400).json({ error: 'Dealer name required' });
   try {
+    const actorId = req.session?.user?.id || 0;
     const dealerCompanyCol = await getFirstExistingColumn('dealers', ['dealer_company_name', 'dealer_company']);
     const hasDealerEmail = await hasColumn('dealers', 'dealer_email');
     const hasLocationId = await hasColumn('dealers', 'location_id');
@@ -161,6 +166,7 @@ router.put('/api/dealers/:id', ensureAdminOrOffice, async (req, res) => {
     setParts.push(`dealer_is_active_flag=$${i++}`); values.push(dealer_is_active_flag !== false);
     setParts.push(`dealer_daily_limit=$${i++}`); values.push(dealer_daily_limit||0);
     setParts.push(`dealer_monthly_target=$${i++}`); values.push(dealer_monthly_target||0);
+    setParts.push(`updated_by=$${i++}`); values.push(actorId);
     setParts.push('updated_at=now()');
     values.push(req.params.id);
 
@@ -180,16 +186,18 @@ router.post('/api/dealers/bulk-limits', ensureAdminOrOffice, async (req, res) =>
   if (!Array.isArray(updates) || updates.length === 0)
     return res.status(400).json({ error: 'No updates provided' });
   try {
+    const actorId = req.session?.user?.id || 0;
     let updated = 0;
     for (const u of updates) {
       if (!u.dealer_id) continue;
       const r = await pool.query(
         `UPDATE odts.dealers
-            SET dealer_daily_limit=$1, dealer_monthly_target=$2, updated_at=now()
-          WHERE dealer_id=$3`,
+            SET dealer_daily_limit=$1, dealer_monthly_target=$2, updated_by=$3, updated_at=now()
+          WHERE dealer_id=$4`,
         [
           parseFloat(u.dealer_daily_limit) || 0,
           parseFloat(u.dealer_monthly_target) || 0,
+          actorId,
           u.dealer_id
         ]
       );

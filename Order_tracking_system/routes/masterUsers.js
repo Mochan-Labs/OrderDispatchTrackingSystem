@@ -38,6 +38,9 @@ async function fetchLoginUsersRows() {
       COALESCE(u.user_is_locked_flag, FALSE) AS user_is_locked_flag,
       u.created_at,
       u.updated_at,
+      CAST(u.updated_at AS DATE) AS updated_at_date,
+      u.updated_by,
+      ub.user_login_name AS updated_by_user_login_name,
       r.role_name,
       r.role_id,
       CASE WHEN UPPER(COALESCE(r.role_name, '')) = 'DEALER' THEN TRUE ELSE FALSE END AS is_dealer_role,
@@ -64,6 +67,7 @@ async function fetchLoginUsersRows() {
     FROM odts.users u
     LEFT JOIN odts.user_roles r ON u.user_role_id = r.role_id
     LEFT JOIN odts.dealers d ON u.dealer_id = d.dealer_id
+    LEFT JOIN odts.users ub ON u.updated_by = ub.user_id
     ORDER BY u.user_id
   `);
 }

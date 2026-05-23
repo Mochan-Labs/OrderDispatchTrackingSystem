@@ -44,7 +44,7 @@ function App(){
 
   const openAdd=()=>{window.location.href='/signup';};
   const exportExcel=()=>{
-    const data=filtered.map(r=>({'User Login Name':r.user_login_name||'','User Name':r.display_name||'','Dealer Company Name':r.display_dealer_company_name||'','Email':r.display_email||'','Phone':r.display_phone||'','Role':r.role_name||'','Status':r.user_is_active_flag?'Active':'Inactive','Locked':r.user_is_locked_flag?'Yes':'No'}) );
+    const data=filtered.map(r=>({'Login Name':r.user_login_name||'','User Name':r.display_name||'','Dealer Company Name':r.display_dealer_company_name||'','Phone':r.display_phone||'','Role':r.role_name||'','Status':r.user_is_active_flag?'Active':'Inactive','Locked':r.user_is_locked_flag?'Yes':'No','Updated At':r.updated_at?new Date(r.updated_at).toLocaleDateString():'','Updated By':r.updated_by_user_login_name||''}) );
     const ws=XLSX.utils.json_to_sheet(data); const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,'LoginUsers'); XLSX.writeFile(wb,'LoginUsers.xlsx');
   };
@@ -90,33 +90,35 @@ function App(){
       </div>
       <div className="card-body">
         <div className="row mb-3">
-          <div className="col-md-4"><input className="form-control" placeholder="Search…" value={search} onChange={e=>setSearch(e.target.value)}/></div>
+          <div className="col-md-4"><input className="form-control" placeholder="Search by login name, user name, dealer company, phone…" value={search} onChange={e=>setSearch(e.target.value)}/></div>
           <div className="col text-end text-muted small align-self-center">{filtered.length} record{filtered.length!==1?'s':''}</div>
         </div>
         {loading?<div className="text-center py-5"><div className="spinner-border text-primary"></div></div>:(
         <div className="table-responsive">
           <table className="table table-hover table-bordered align-middle mb-0">
             <thead className="table-light"><tr>
-              <th style={{cursor:'pointer'}} onClick={()=>sort('user_login_name')}>User Login Name<SI col="user_login_name"/></th>
+              <th style={{cursor:'pointer'}} onClick={()=>sort('user_login_name')}>Login Name<SI col="user_login_name"/></th>
               <th style={{cursor:'pointer'}} onClick={()=>sort('display_name')}>User Name<SI col="display_name"/></th>
               <th style={{cursor:'pointer'}} onClick={()=>sort('display_dealer_company_name')}>Dealer Company Name<SI col="display_dealer_company_name"/></th>
-              <th style={{cursor:'pointer'}} onClick={()=>sort('display_email')}>Email<SI col="display_email"/></th>
               <th style={{cursor:'pointer'}} onClick={()=>sort('display_phone')}>Phone<SI col="display_phone"/></th>
               <th style={{cursor:'pointer'}} onClick={()=>sort('role_name')}>Role<SI col="role_name"/></th>
               <th style={{width:'90px',textAlign:'center'}}>Status</th>
               <th style={{width:'90px',textAlign:'center'}}>Locked</th>
+              <th style={{cursor:'pointer', width:'160px'}} onClick={()=>sort('updated_at')}>Updated At<SI col="updated_at"/></th>
+              <th style={{cursor:'pointer', width:'160px'}} onClick={()=>sort('updated_by')}>Updated By<SI col="updated_by"/></th>
               <th style={{width:'90px',textAlign:'center'}}>Action</th>
             </tr></thead>
-            <tbody>{filtered.length===0?<tr><td colSpan="9" className="text-center text-muted py-4">No users found</td></tr>:
+            <tbody>{filtered.length===0?<tr><td colSpan="10" className="text-center text-muted py-4">No users found</td></tr>:
               filtered.map(r=><tr key={r.user_id}>
-                <td>{r.user_login_name||<span className="text-muted">—</span>}</td>
+                <td><span className="badge bg-primary">{r.user_login_name||'—'}</span></td>
                 <td>{r.display_name||<span className="text-muted">—</span>}</td>
                 <td>{r.display_dealer_company_name||<span className="text-muted">—</span>}</td>
-                <td>{r.display_email||<span className="text-muted">—</span>}</td>
                 <td>{r.display_phone||<span className="text-muted">—</span>}</td>
                 <td><span className="badge bg-info text-dark">{r.role_name||'—'}</span></td>
                 <td className="text-center">{r.user_is_active_flag?<span className="badge bg-success">Active</span>:<span className="badge bg-secondary">Inactive</span>}</td>
                 <td className="text-center">{r.user_is_locked_flag?<span className="badge bg-danger">Locked</span>:<span className="badge bg-success">No</span>}</td>
+                <td>{r.updated_at?new Date(r.updated_at).toLocaleDateString():<span className="text-muted">—</span>}</td>
+                <td>{r.updated_by_user_login_name||<span className="text-muted">—</span>}</td>
                 <td className="text-center"><button className="btn btn-outline-primary btn-sm" onClick={()=>openEdit(r)}>Edit</button></td>
               </tr>)
             }</tbody>
@@ -146,7 +148,7 @@ function App(){
               <div className="col-md-6"><label className="form-label fw-semibold">Email <span className="text-muted">(optional)</span></label>
                 <input className="form-control" type="email" value={form.user_email} onChange={e=>setForm({...form,user_email:e.target.value})}/></div>
               <div className="col-md-6"><label className="form-label fw-semibold">Phone <span className="text-muted">(optional)</span></label>
-                <input className="form-control" value={form.user_phone} onChange={e=>setForm({...form,user_phone:e.target.value})}/></div>
+                <input className="form-control" value={form.user_phone} onChange={e=>setForm({...form,user_phone:e.target.value})} maxLength="10"/></div>
               <div className="col-md-3 d-flex align-items-end"><div className="form-check form-switch">
                 <input className="form-check-input" type="checkbox" id="userActive" checked={form.user_is_active_flag} onChange={e=>setForm({...form,user_is_active_flag:e.target.checked})}/>
                 <label className="form-check-label" htmlFor="userActive">Active</label>
