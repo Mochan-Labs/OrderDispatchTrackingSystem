@@ -207,4 +207,29 @@ router.post('/api/dealers/bulk-limits', ensureAdminOrOffice, async (req, res) =>
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+router.get('/api/dealers/export/parties', ensureAdminOrOffice, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT d.dealer_code,
+              dp.party_code,
+              dp.party_name,
+              dp.party_company_name,
+              dp.party_phone,
+              dp.party_email,
+              dp.party_address,
+              dp.party_is_active_flag,
+              dp.created_at,
+              dp.updated_at,
+              uc.user_login_name AS created_by_user,
+              uu.user_login_name AS updated_by_user
+       FROM odts.dealer_party dp
+       JOIN odts.dealers d ON dp.dealer_id = d.dealer_id
+       LEFT JOIN odts.users uc ON dp.created_by = uc.user_id
+       LEFT JOIN odts.users uu ON dp.updated_by = uu.user_id
+       ORDER BY d.dealer_code, dp.party_code`
+    );
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;

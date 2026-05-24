@@ -199,10 +199,20 @@ function App(){
   useEffect(()=>{load();},[]);
 
   const openAdd=()=>{setForm(EMPTY_DEALER);setEditId(null);setShowModal(true);};
-  const exportExcel=()=>{
-    const data=filtered.map(r=>({'Login Name':r.user_login_name||'','Dealer Name':r.dealer_name,'Dealer Company Name':r.dealer_company_name||'','Phone':r.dealer_phone||'','Address':r.dealer_address||'','Daily Limit':r.dealer_daily_limit||0,'Monthly Target':r.dealer_monthly_target||0,'Active':r.dealer_is_active_flag?'Yes':'No','Updated At':r.updated_at?new Date(r.updated_at).toLocaleDateString():'','Updated By':r.updated_by_user_login_name||''}) );
-    const ws=XLSX.utils.json_to_sheet(data); const wb=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb,ws,'Dealers'); XLSX.writeFile(wb,'Dealers.xlsx');
+  const exportExcel=async()=>{
+    try{
+      const dealersData=filtered.map(r=>({'Login Name':r.user_login_name||'','Dealer Name':r.dealer_name,'Dealer Company Name':r.dealer_company_name||'','Dealer Code':r.dealer_code||'','Phone':r.dealer_phone||'','Address':r.dealer_address||'','Daily Limit':r.dealer_daily_limit||0,'Monthly Target':r.dealer_monthly_target||0,'Active':r.dealer_is_active_flag?'Yes':'No','Updated At':r.updated_at?new Date(r.updated_at).toLocaleDateString():'','Updated By':r.updated_by_user_login_name||''}) );
+      const partiesRes=await fetch('/api/dealers/export/parties');
+      if(!partiesRes.ok)throw new Error(await partiesRes.text());
+      const partiesRows=await partiesRes.json();
+      const partiesData=partiesRows.map(p=>({'Dealer Code':p.dealer_code,'Party Code':p.party_code||'','Party Name':p.party_name||'','Party Company Name':p.party_company_name||'','Phone':p.party_phone||'','Email':p.party_email||'','Address':p.party_address||'','Active':p.party_is_active_flag?'Yes':'No','Created At':p.created_at?new Date(p.created_at).toLocaleDateString():'','Created By':p.created_by_user||'','Updated At':p.updated_at?new Date(p.updated_at).toLocaleDateString():'','Updated By':p.updated_by_user||''}));
+      const wb=XLSX.utils.book_new();
+      const dealersWs=XLSX.utils.json_to_sheet(dealersData);
+      const partiesWs=XLSX.utils.json_to_sheet(partiesData);
+      XLSX.utils.book_append_sheet(wb,dealersWs,'Dealers');
+      XLSX.utils.book_append_sheet(wb,partiesWs,'Parties');
+      XLSX.writeFile(wb,'Dealers.xlsx');
+    }catch(e){notify(e.message,'danger');}
   };
   const bulkUpload=async(e)=>{
     const file=e.target.files[0]; if(!file) return;
