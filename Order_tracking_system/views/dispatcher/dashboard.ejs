@@ -753,7 +753,7 @@ function PendingDealersModal({ orders, onSelectDealer, onClose }) {
   );
 }
 
-function DealerOrdersModal({ orders, dealerId, onClose, onBack, onAccept, onDispatch, onView }) {
+function DealerOrdersModal({ orders, dealerId, onClose, onBack, onAccept, onDispatch, onView, onCancel }) {
   const [accepting, setAccepting] = useState({});
 
   const dealerOrders = orders
@@ -840,6 +840,11 @@ function DealerOrdersModal({ orders, dealerId, onClose, onBack, onAccept, onDisp
                       {order.order_status === 'ACCEPTED' && (
                         <button className="btn btn-sm btn-success" onClick={() => onDispatch(order)}>
                           🚛 Dispatch
+                        </button>
+                      )}
+                      {order.order_status !== 'CANCELLED' && (
+                        <button className="btn btn-sm btn-danger" onClick={() => onCancel && onCancel(order.order_id)}>
+                          ❌ Cancel
                         </button>
                       )}
                     </div>
@@ -1002,7 +1007,7 @@ function DealerDispatchedOrdersModal({ orders, dealerId, onClose, onBack, onView
   );
 }
 
-function OrderRow({ order, onAccept, onDispatch, onView, isOrderOverdue }) {
+function OrderRow({ order, onAccept, onDispatch, onView, onCancel, isOrderOverdue }) {
   const [accepting, setAccepting] = useState(false);
 
   const handleAccept = async () => {
@@ -1069,6 +1074,11 @@ function OrderRow({ order, onAccept, onDispatch, onView, isOrderOverdue }) {
         )}
         {order.order_status === 'ON_HOLD' && (
           <span className="text-muted small">—</span>
+        )}
+        {order.order_status !== 'CANCELLED' && (
+          <button className="btn btn-sm btn-danger ms-1" onClick={() => onCancel && onCancel(order.order_id)}>
+            ❌ Cancel
+          </button>
         )}
       </td>
     </tr>
@@ -1274,7 +1284,7 @@ function TotalOrdersListModal({ orders, onClose, onView, onAccept, onDispatch })
   );
 }
 
-function TotalDealerOrdersModal({ orders, dealerId, onClose, onBack, onView, onAccept, onDispatch }) {
+function TotalDealerOrdersModal({ orders, dealerId, onClose, onBack, onView, onAccept, onDispatch, onCancel }) {
   const dealerOrders = orders.filter(o => o.dealer_id === dealerId);
   const dealerName = dealerOrders[0]?.dealer_login_name || dealerOrders[0]?.dealer_company_name || dealerOrders[0]?.dealer_name || `Dealer #${dealerId}`;
 
@@ -1340,6 +1350,11 @@ function TotalDealerOrdersModal({ orders, dealerId, onClose, onBack, onView, onA
                           🚛 Dispatch
                         </button>
                       )}
+                      {order.order_status !== 'CANCELLED' && (
+                        <button className="btn btn-sm btn-danger" onClick={() => onCancel && onCancel(order.order_id)}>
+                          ❌ Cancel
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1352,7 +1367,7 @@ function TotalDealerOrdersModal({ orders, dealerId, onClose, onBack, onView, onA
   );
 }
 
-function DealerGroup({ orders, onAccept, onDispatch, onView, isOrderOverdue }) {
+function DealerGroup({ orders, onAccept, onDispatch, onView, onCancel, isOrderOverdue }) {
   const [expanded, setExpanded] = useState(true);
 
   const placedCount    = orders.filter(o => o.order_status === 'ORDER_PLACED').length;
@@ -1417,6 +1432,7 @@ function DealerGroup({ orders, onAccept, onDispatch, onView, isOrderOverdue }) {
                     onAccept={onAccept}
                     onDispatch={onDispatch}
                     onView={onView}
+                    onCancel={onCancel}
                     isOrderOverdue={isOrderOverdue}
                   />
                 ))}
@@ -1600,6 +1616,23 @@ function App() {
     }
   };
 
+  const handleCancel = async (orderId) => {
+    if (!window.confirm('Are you sure you want to cancel this order? This action cannot be undone.')) return;
+    const r = await fetch(`/api/orders/${orderId}/cancel`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ cancellation_reason: '' }),
+    });
+    if (r.ok) {
+      notify(`Order #${orderId} cancelled`);
+      setSelectedDealerId(null);
+      fetchOrders();
+    } else {
+      const d = await r.json().catch(() => ({}));
+      notify(d.error || 'Failed to cancel', 'error');
+    }
+  };
+
   // Group by dealer_id, preserve insertion order (already sorted by dealer_id, order_date ASC from API)
   const dealerGroups = {};
   orders.forEach(o => {
@@ -1670,6 +1703,7 @@ function App() {
           onView={order => {
             setViewOrder(order);
           }}
+          onCancel={handleCancel}
         />
       )}
 
@@ -1777,6 +1811,7 @@ function App() {
             setDispatchModal(order);
             setSelectedTotalDealerId(null);
           }}
+          onCancel={handleCancel}
         />
       )}
 
@@ -1907,6 +1942,7 @@ function App() {
             onAccept={handleAccept}
             onDispatch={order => setDispatchModal(order)}
             onView={order => setViewOrder(order)}
+            onCancel={handleCancel}
             isOrderOverdue={isOrderOverdue}
           />
         ))

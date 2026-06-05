@@ -329,9 +329,11 @@ router.get('/orders', ensureDealer, (req, res) => {
   const canViewAllOrders = role === 'ADMIN' || role === 'DISPATCHER' || role === 'OFFICE_EXECUTIVE';
   const isAdminOrOffice = role === 'ADMIN' || role === 'OFFICE_EXECUTIVE';
   const isDispatcher = role === 'DISPATCHER';
+  console.log(`[/orders] User: ${req.session.user.username}, Role: '${role}', isDispatcher: ${isDispatcher}, isAdmin: ${isAdmin}`);
   if (!isAdmin && req.query.action === 'new') {
     return res.render('orders/new', { user: req.session.user });
   }
+  console.log(`[/orders-render] Passing to view: isDispatcher=${isDispatcher}, isAdmin=${isAdmin}, isAdminOrOffice=${isAdminOrOffice}, canViewAllOrders=${canViewAllOrders}`);
   res.render('orders/index', { user: req.session.user, isAdmin, canViewAllOrders, isAdminOrOffice, isDispatcher });
 });
 

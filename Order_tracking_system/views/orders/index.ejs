@@ -3,7 +3,13 @@
 <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script>window._IS_ADMIN = <%- isAdmin ? 'true' : 'false' %>; window._CAN_VIEW_ALL = <%- canViewAllOrders ? 'true' : 'false' %>; window._IS_ADMIN_OR_OFFICE = <%- isAdminOrOffice ? 'true' : 'false' %>; window._IS_DISPATCHER = <%- isDispatcher ? 'true' : 'false' %>;</script>
+<script>
+window._IS_ADMIN = <%= isAdmin ? 'true' : 'false' %>;
+window._CAN_VIEW_ALL = <%= canViewAllOrders ? 'true' : 'false' %>;
+window._IS_ADMIN_OR_OFFICE = <%= isAdminOrOffice ? 'true' : 'false' %>;
+window._IS_DISPATCHER = <%= isDispatcher ? 'true' : 'false' %>;
+console.log('[Window vars set]', { _IS_ADMIN: window._IS_ADMIN, _IS_DISPATCHER: window._IS_DISPATCHER });
+</script>
 
 <nav aria-label="breadcrumb" class="mb-3">
   <ol class="breadcrumb">
@@ -33,10 +39,10 @@
 
 <script type="text/babel">
 const { useState, useEffect, useRef } = React;
-const IS_ADMIN = window._IS_ADMIN === true;
-const CAN_VIEW_ALL = window._CAN_VIEW_ALL === true;
-const IS_ADMIN_OR_OFFICE = window._IS_ADMIN_OR_OFFICE === true;
-const IS_DISPATCHER = window._IS_DISPATCHER === true;
+const IS_ADMIN = window._IS_ADMIN === 'true' || window._IS_ADMIN === true;
+const CAN_VIEW_ALL = window._CAN_VIEW_ALL === 'true' || window._CAN_VIEW_ALL === true;
+const IS_ADMIN_OR_OFFICE = window._IS_ADMIN_OR_OFFICE === 'true' || window._IS_ADMIN_OR_OFFICE === true;
+const IS_DISPATCHER = window._IS_DISPATCHER === 'true' || window._IS_DISPATCHER === true;
 
 const STATUS_CONFIG = {
   ORDER_PLACED: { text: 'Order Placed', icon: '🕐', bg: '#fd7e14', tc: '#fff' },
@@ -1388,7 +1394,7 @@ function App() {
             {IS_ADMIN_OR_OFFICE && (
               <>
                 <button className="btn btn-outline-success btn-sm" onClick={exportExcel}>
-                  ⬇️ <span className="d-none d-sm-inline">Excel</span>
+                  ⬇️ <span className="d-none d-sm-inline">Download</span>
                 </button>
                 <button className="btn btn-info btn-sm" onClick={() => setShowCreateForDealer(true)}>
                   🛒 <span className="d-none d-sm-inline">Create</span>
