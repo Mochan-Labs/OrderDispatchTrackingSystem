@@ -3,7 +3,7 @@
 <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script>window._IS_ADMIN = <%- isAdmin ? 'true' : 'false' %>; window._CAN_VIEW_ALL = <%- canViewAllOrders ? 'true' : 'false' %>; window._IS_ADMIN_OR_OFFICE = <%- isAdminOrOffice ? 'true' : 'false' %>;</script>
+<script>window._IS_ADMIN = <%- isAdmin ? 'true' : 'false' %>; window._CAN_VIEW_ALL = <%- canViewAllOrders ? 'true' : 'false' %>; window._IS_ADMIN_OR_OFFICE = <%- isAdminOrOffice ? 'true' : 'false' %>; window._IS_DISPATCHER = <%- isDispatcher ? 'true' : 'false' %>;</script>
 
 <nav aria-label="breadcrumb" class="mb-3">
   <ol class="breadcrumb">
@@ -36,12 +36,14 @@ const { useState, useEffect, useRef } = React;
 const IS_ADMIN = window._IS_ADMIN === true;
 const CAN_VIEW_ALL = window._CAN_VIEW_ALL === true;
 const IS_ADMIN_OR_OFFICE = window._IS_ADMIN_OR_OFFICE === true;
+const IS_DISPATCHER = window._IS_DISPATCHER === true;
 
 const STATUS_CONFIG = {
   ORDER_PLACED: { text: 'Order Placed', icon: '🕐', bg: '#fd7e14', tc: '#fff' },
   ACCEPTED:     { text: 'Accepted',     icon: '✅', bg: '#0dcaf0', tc: '#000' },
   DISPATCHED:   { text: 'Dispatched',   icon: '📦', bg: '#198754', tc: '#fff' },
   ON_HOLD:      { text: 'On Hold',      icon: '⏸️', bg: '#e57373', tc: '#fff' },
+  CANCELLED:    { text: 'Cancelled',    icon: '❌', bg: '#6c757d', tc: '#fff' },
 };
 
 
@@ -597,9 +599,10 @@ function CreateForDealerModal({ onClose, onSaved, repeatFrom }) {
       return;
     }
 
-    // Find the selected load type description to check if it's Company Transport
+    // Find the selected load type to check if it's Company Transport
     const selectedLoadType = loadTypes.find(lt => lt.code === loadType);
-    const isCompanyTransport = selectedLoadType && selectedLoadType.code_desc.toUpperCase().includes('COMPANY') && selectedLoadType.code_desc.toUpperCase().includes('TRANSPORT');
+    const label = selectedLoadType ? (selectedLoadType.code_label || selectedLoadType.code_desc || '').toUpperCase() : '';
+    const isCompanyTransport = label.includes('COMPANY') && label.includes('TRANSPORT');
 
     if (!isCompanyTransport && !prefLocation) {
       setError('Preferred Loading Location is required for this loading type');
@@ -774,7 +777,7 @@ function CreateForDealerModal({ onClose, onSaved, repeatFrom }) {
                     }
                   }}>
                     <option value="">Select Loading Type</option>
-                    {loadTypes.map(lt => <option key={lt.code} value={lt.code}>{lt.code_desc}</option>)}
+                    {loadTypes.map(lt => <option key={lt.code} value={lt.code}>{lt.code_label || lt.code_desc}</option>)}
                   </select>
                 </div>
                 <div className="col-md-6">
@@ -782,13 +785,14 @@ function CreateForDealerModal({ onClose, onSaved, repeatFrom }) {
                     Preferred Loading Location
                     {(() => {
                       const selectedLoadType = loadTypes.find(lt => lt.code === loadType);
-                      const isCompanyTransport = selectedLoadType && selectedLoadType.code_desc.toUpperCase().includes('COMPANY') && selectedLoadType.code_desc.toUpperCase().includes('TRANSPORT');
+                      const label = selectedLoadType ? (selectedLoadType.code_label || selectedLoadType.code_desc || '').toUpperCase() : '';
+                      const isCompanyTransport = label.includes('COMPANY') && label.includes('TRANSPORT');
                       return !isCompanyTransport && loadType ? <span className="text-danger">*</span> : null;
                     })()}
                   </label>
                   <select className="form-select" value={prefLocation} onChange={(e) => setPrefLocation(e.target.value)}>
                     <option value="">Select Preferred Location</option>
-                    {prefLocations.map(pl => <option key={pl.code} value={pl.code}>{pl.code_desc}</option>)}
+                    {prefLocations.map(pl => <option key={pl.code} value={pl.code}>{pl.code_desc || pl.code_label}</option>)}
                   </select>
                 </div>
               </div>
@@ -1119,6 +1123,22 @@ function App() {
   const handleDealerHold = async (reason) => {
     await changeStatus(holdOrder.order_id, 'ON_HOLD', { reason });
     setHoldOrder(null);
+  };
+
+  const cancelOrder = async (orderId, reason = '') => {
+    if (!window.confirm('Are you sure you want to cancel this order? This action cannot be undone.')) return;
+    try {
+      const res = await fetch(`/api/orders/${orderId}/cancel`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ cancellation_reason: reason })
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error);
+      notify(`Order #${orderId} cancelled`);
+      load();
+    } catch(e) { notify(e.message, 'danger'); }
   };
 
   const counts = {
@@ -1600,6 +1620,12 @@ function App() {
                               <button className="link-primary" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline', color: '#6f42c1' }} onClick={() => setRepeatOrder(o)}>🔁 Repeat Order</button>
                             </>
                           )}
+                          {(IS_ADMIN || IS_DISPATCHER) && o.order_status !== 'CANCELLED' && (
+                            <>
+                              {' | '}
+                              <button className="link-danger" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => cancelOrder(o.order_id)}>Cancel Order</button>
+                            </>
+                          )}
                         </div>
 
                         {/* MOBILE: Text links with pipes (same as desktop but smaller) */}
@@ -1674,6 +1700,12 @@ function App() {
                             <>
                               {' | '}
                               <button className="link-primary" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline', color: '#6f42c1' }} onClick={() => setRepeatOrder(o)}>🔁 Repeat Order</button>
+                            </>
+                          )}
+                          {(IS_ADMIN || IS_DISPATCHER) && o.order_status !== 'CANCELLED' && (
+                            <>
+                              {' | '}
+                              <button className="link-danger" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => cancelOrder(o.order_id)}>Cancel Order</button>
                             </>
                           )}
                         </div>

@@ -44,6 +44,9 @@ const VALID_TRANSITIONS = {
   ON_HOLD:      ['ORDER_PLACED'],
 };
 
+// Dispatcher can cancel orders from any status at any time
+const DISPATCHER_ONLY_TRANSITIONS = ['CANCELLED'];
+
 // Correlated subquery — fetches all items for an order as a JSON array
 const ITEMS_SUBQUERY = `
   (SELECT COALESCE(json_agg(json_build_object(
@@ -325,10 +328,11 @@ router.get('/orders', ensureDealer, (req, res) => {
   const isAdmin = role === 'ADMIN' || role === 'DISPATCHER';
   const canViewAllOrders = role === 'ADMIN' || role === 'DISPATCHER' || role === 'OFFICE_EXECUTIVE';
   const isAdminOrOffice = role === 'ADMIN' || role === 'OFFICE_EXECUTIVE';
+  const isDispatcher = role === 'DISPATCHER';
   if (!isAdmin && req.query.action === 'new') {
     return res.render('orders/new', { user: req.session.user });
   }
-  res.render('orders/index', { user: req.session.user, isAdmin, canViewAllOrders, isAdminOrOffice });
+  res.render('orders/index', { user: req.session.user, isAdmin, canViewAllOrders, isAdminOrOffice, isDispatcher });
 });
 
 router.get('/office/dashboard', ensureAdminOrOfficeExecutive, (req, res) => {
@@ -799,8 +803,8 @@ router.post('/api/admin/orders/on-behalf', ensureDealer, async (req, res) => {
       client.release();
     }
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Admin orders error:', e.message, e.stack);
+    res.status(500).json({ error: e.message || 'Server error' });
   }
 });
 
@@ -1006,6 +1010,51 @@ router.patch('/api/dealer/orders/:id/status', ensureDealer, async (req, res) => 
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PATCH /api/orders/:id/cancel — admin and dispatcher can cancel orders at any time
+router.patch('/api/orders/:id/cancel', ensureDealer, async (req, res) => {
+  try {
+    const role = req.session.user.role;
+    // Only ADMIN and DISPATCHER can cancel orders
+    if (role !== 'ADMIN' && role !== 'DISPATCHER') {
+      return res.status(403).json({ error: 'Only admins and dispatchers can cancel orders' });
+    }
+
+    const orderId = parseInt(req.params.id);
+    const { cancellation_reason } = req.body;
+
+    const existing = await pool.query('SELECT * FROM odts.dealer_orders WHERE order_id = $1', [orderId]);
+    if (!existing.rows.length) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const order = existing.rows[0];
+    const currentStatus = order.order_status;
+
+    // Admin and Dispatcher can cancel from any status
+    const result = await pool.query(
+      `UPDATE odts.dealer_orders
+       SET order_status = $1,
+           updated_by = $2,
+           updated_at = NOW()
+       WHERE order_id = $3
+       RETURNING *`,
+      ['CANCELLED', req.session.user.id, orderId]
+    );
+
+    res.json({
+      order_id: result.rows[0].order_id,
+      order_status: 'CANCELLED',
+      previous_status: currentStatus,
+      cancelled_by: req.session.user.username,
+      cancelled_at: new Date(),
+      cancellation_reason: cancellation_reason || null
+    });
+  } catch (e) {
+    console.error('Cancel order error:', e.message);
+    res.status(500).json({ error: e.message || 'Server error' });
   }
 });
 

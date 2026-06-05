@@ -23,7 +23,8 @@
     "pg": "^8.20.0"
   },
   "devDependencies": {
-    "nodemon": "^2.0.22"
+    "nodemon": "^2.0.22",
+    "playwright": "^1.60.0"
   },
   "keywords": []
 }

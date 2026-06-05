@@ -252,16 +252,17 @@
   })();
 
   // Loading Type
+  let loadingCodes = [];
   (async () => {
     const sel = document.getElementById('load_type_code');
     try {
       const res = await fetch('/api/codes/loading_type');
-      const codes = await res.json();
+      loadingCodes = await res.json();
       sel.innerHTML = '<option value="">Select Loading Type</option>';
-      codes.forEach(c => {
+      loadingCodes.forEach(c => {
         const opt = document.createElement('option');
         opt.value = c.code;
-        opt.textContent = c.code_desc;
+        opt.textContent = c.code_label || c.code_desc || c.code;
         sel.appendChild(opt);
       });
     } catch (e) { sel.innerHTML = '<option value="">Failed to load</option>'; }
@@ -294,12 +295,19 @@
     } catch (e) { sel.innerHTML = '<option value="">Failed to load</option>'; }
   })();
 
+  // Helper: detect Company Transport by code value
+  function isCompanyTransportCode(code) {
+    if (!code) return false;
+    const found = loadingCodes.find(c => c.code === code);
+    if (!found) return false;
+    const label = (found.code_label || found.code_desc || '').toUpperCase();
+    return label.includes('COMPANY') && label.includes('TRANSPORT');
+  }
+
   // Self DOT Driver Section visibility & Preferred Location conditional validation
   function updateLoadTypeValidation() {
     const loadTypeSelect = document.getElementById('load_type_code');
     const selectedCode = loadTypeSelect.value;
-    const selectedOption = loadTypeSelect.options[loadTypeSelect.selectedIndex];
-    const selectedDesc = selectedOption ? selectedOption.textContent : '';
 
     const dotSection = document.getElementById('dot-driver-section');
     const locationSelect = document.getElementById('preferred_location_code');
@@ -316,7 +324,7 @@
     }
 
     // Make Preferred Location mandatory/optional based on loading type
-    const isCompanyTransport = selectedDesc.toUpperCase().includes('COMPANY') && selectedDesc.toUpperCase().includes('TRANSPORT');
+    const isCompanyTransport = isCompanyTransportCode(selectedCode);
 
     if (isCompanyTransport) {
       // Company Transport - preferred location is optional
@@ -522,10 +530,7 @@
       if (!loadTypeCode) throw new Error('Loading Type is required.');
 
       // Validate preferred location based on loading type
-      const loadTypeSelect = document.getElementById('load_type_code');
-      const selectedOption = loadTypeSelect.options[loadTypeSelect.selectedIndex];
-      const selectedDesc = selectedOption ? selectedOption.textContent : '';
-      const isCompanyTransport = selectedDesc.toUpperCase().includes('COMPANY') && selectedDesc.toUpperCase().includes('TRANSPORT');
+      const isCompanyTransport = isCompanyTransportCode(loadTypeCode);
       const preferredLocationCode = document.getElementById('preferred_location_code').value;
 
       if (!isCompanyTransport && !preferredLocationCode) {
