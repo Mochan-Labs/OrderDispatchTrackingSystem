@@ -1,0 +1,730 @@
+<%- include('./partials/header') %>
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/dashboard">Dashboard</a></li>
+    <li class="breadcrumb-item active">WhatsApp Notifications</li>
+  </ol>
+</nav>
+
+<div id="app-root"></div>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+function Toast({ msg, type, onClose }) {
+  useEffect(() => {
+    const t = setTimeout(onClose, 4000);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <div style={{
+      position: 'fixed', top: 80, right: 20, zIndex: 9999, minWidth: 280,
+      background: type === 'success' ? '#198754' : '#dc3545',
+      color: '#fff', padding: '12px 18px', borderRadius: 8,
+      boxShadow: '0 4px 16px rgba(0,0,0,.25)'
+    }}>
+      {type === 'success' ? '✅' : '❌'} {msg}
+    </div>
+  );
+}
+
+function TemplatesTab() {
+  const [templates, setTemplates] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [formData, setFormData] = useState({ template_name: '', message_body: '' });
+  const [toast, setToast] = useState({ msg: '', type: 'success' });
+
+  useEffect(() => {
+    loadTemplates();
+  }, []);
+
+  const loadTemplates = async () => {
+    try {
+      const res = await fetch('/api/admin/whatsapp/templates', { credentials: 'include' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setTemplates(data);
+      setLoading(false);
+    } catch (e) {
+      console.error('[WhatsApp] Load templates error:', e);
+      setToast({ msg: `Failed to load templates: ${e.message}`, type: 'danger' });
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!formData.template_name || !formData.message_body) {
+      setToast({ msg: 'Template name and message required', type: 'danger' });
+      return;
+    }
+
+    try {
+      const method = editingId ? 'PUT' : 'POST';
+      const url = editingId ? `/api/admin/whatsapp/templates/${editingId}` : '/api/admin/whatsapp/templates';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(formData)
+      });
+
+      if (!res.ok) throw new Error('Save failed');
+      setToast({ msg: editingId ? 'Template updated' : 'Template created', type: 'success' });
+      setFormData({ template_name: '', message_body: '' });
+      setShowCreate(false);
+      setEditingId(null);
+      loadTemplates();
+    } catch (e) {
+      setToast({ msg: e.message, type: 'danger' });
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('Delete this template?')) return;
+    try {
+      const res = await fetch(`/api/admin/whatsapp/templates/${id}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      if (!res.ok) throw new Error('Delete failed');
+      setToast({ msg: 'Template deleted', type: 'success' });
+      loadTemplates();
+    } catch (e) {
+      setToast({ msg: e.message, type: 'danger' });
+    }
+  };
+
+  const handleEdit = (template) => {
+    setFormData({ template_name: template.template_name, message_body: template.message_body });
+    setEditingId(template.template_id);
+    setShowCreate(true);
+  };
+
+  if (loading) return <div className="text-center"><span className="spinner-border"></span></div>;
+
+  return (
+    <div>
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <h5 className="mb-0">Message Templates</h5>
+        <button className="btn btn-primary btn-sm" onClick={() => { setShowCreate(!showCreate); setEditingId(null); setFormData({ template_name: '', message_body: '' }); }}>
+          + New Template
+        </button>
+      </div>
+
+      {showCreate && (
+        <div className="card mb-4 p-4">
+          <div className="row g-3">
+            <div className="col-12">
+              <label className="form-label fw-semibold">Template Name</label>
+              <input type="text" className="form-control" value={formData.template_name}
+                onChange={(e) => setFormData({ ...formData, template_name: e.target.value })}
+                placeholder="e.g. Order Dispatch Alert" />
+            </div>
+            <div className="col-12">
+              <label className="form-label fw-semibold">Message Body</label>
+              <textarea className="form-control" rows="4" value={formData.message_body}
+                onChange={(e) => setFormData({ ...formData, message_body: e.target.value })}
+                placeholder="Use {{dealer_name}}, {{dealer_code}}, {{dealer_phone}} for variables" />
+              <small className="text-muted d-block mt-2">
+                Available variables: {`{{dealer_name}}, {{dealer_code}}, {{dealer_phone}}`}
+              </small>
+            </div>
+            <div className="col-12">
+              <button className="btn btn-success" onClick={handleSave}>{editingId ? 'Update' : 'Create'} Template</button>
+              <button className="btn btn-light ms-2" onClick={() => { setShowCreate(false); setEditingId(null); }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="row">
+        {templates.map(t => (
+          <div key={t.template_id} className="col-md-6 mb-3">
+            <div className="card h-100">
+              <div className="card-body">
+                <h6 className="card-title">{t.template_name}</h6>
+                <p className="card-text text-muted small" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {t.message_body}
+                </p>
+                <div className="d-flex gap-2">
+                  <button className="btn btn-sm btn-outline-primary" onClick={() => handleEdit(t)}>Edit</button>
+                  <button className="btn btn-sm btn-outline-danger" onClick={() => handleDelete(t.template_id)}>Delete</button>
+                </div>
+              </div>
+              <div className="card-footer text-muted small">
+                Created: {new Date(t.created_at).toLocaleDateString()}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {templates.length === 0 && !showCreate && (
+        <div className="alert alert-info">No templates yet. Create one to get started!</div>
+      )}
+
+      {toast.msg && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast({ msg: '', type: 'success' })} />}
+    </div>
+  );
+}
+
+function SendMessageTab() {
+  const [dealers, setDealers] = useState([]);
+  const [templates, setTemplates] = useState([]);
+  const [selectedDealers, setSelectedDealers] = useState([]);
+  const [selectedTemplate, setSelectedTemplate] = useState('');
+  const [customMessage, setCustomMessage] = useState('');
+  const [useCustom, setUseCustom] = useState(false);
+  const [searchDealers, setSearchDealers] = useState('');
+  const [sending, setSending] = useState(false);
+  const [preview, setPreview] = useState('');
+  const [result, setResult] = useState(null);
+  const [toast, setToast] = useState({ msg: '', type: 'success' });
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewMessages, setPreviewMessages] = useState([]);
+  const [sendingIndex, setSendingIndex] = useState(0);
+  const [prependGreeting, setPrependGreeting] = useState(false);
+
+  useEffect(() => {
+    loadDealers();
+    loadTemplates();
+  }, []);
+
+  useEffect(() => {
+    generatePreview();
+  }, [useCustom, customMessage, selectedTemplate, selectedDealers]);
+
+  const loadDealers = async () => {
+    try {
+      const res = await fetch('/api/admin/whatsapp/dealers', { credentials: 'include' });
+      const data = await res.json();
+      setDealers(data);
+    } catch (e) {
+      setToast({ msg: 'Failed to load dealers', type: 'danger' });
+    }
+  };
+
+  const loadTemplates = async () => {
+    try {
+      const res = await fetch('/api/admin/whatsapp/templates', { credentials: 'include' });
+      const data = await res.json();
+      setTemplates(data);
+    } catch (e) {
+      setToast({ msg: 'Failed to load templates', type: 'danger' });
+    }
+  };
+
+  const generatePreview = () => {
+    if (selectedDealers.length === 0) {
+      setPreview('');
+      return;
+    }
+    const dealer = dealers.find(d => d.dealer_id === selectedDealers[0]);
+    if (!dealer) return;
+
+    let msg = useCustom ? customMessage : templates.find(t => t.template_id === parseInt(selectedTemplate))?.message_body || '';
+    msg = msg
+      .replace(/{{dealer_name}}/g, dealer.dealer_name)
+      .replace(/{{dealer_code}}/g, dealer.dealer_code)
+      .replace(/{{dealer_phone}}/g, dealer.dealer_phone);
+    setPreview(msg);
+  };
+
+  const handleSend = async () => {
+    if (selectedDealers.length === 0) {
+      setToast({ msg: 'Select at least one dealer', type: 'danger' });
+      return;
+    }
+    if (!useCustom && !selectedTemplate) {
+      setToast({ msg: 'Select a template or write custom message', type: 'danger' });
+      return;
+    }
+    if (useCustom && !customMessage.trim()) {
+      setToast({ msg: 'Message cannot be empty', type: 'danger' });
+      return;
+    }
+
+    setSending(true);
+    try {
+      const selectedDealerObjs = dealers.filter(d => selectedDealers.includes(d.dealer_id));
+      const templateObj = templates.find(t => t.template_id === parseInt(selectedTemplate));
+
+      let msgTemplate = customMessage;
+      if (!useCustom && templateObj) {
+        msgTemplate = templateObj.message_body;
+      }
+
+      // Generate preview messages for all dealers
+      const messages = [];
+      for (const dealer of selectedDealerObjs) {
+        const variables = {
+          dealer_name: dealer.dealer_name,
+          dealer_code: dealer.dealer_code,
+          dealer_phone: dealer.dealer_phone
+        };
+
+        let finalMessage = msgTemplate;
+        Object.keys(variables).forEach(key => {
+          const regex = new RegExp('{{' + key + '}}', 'g');
+          finalMessage = finalMessage.replace(regex, variables[key] || '');
+        });
+
+        // Auto-prepend greeting with dealer name if enabled
+        if (prependGreeting) {
+          finalMessage = 'Hi ' + dealer.dealer_name + ',\n\n' + finalMessage;
+        }
+
+        const phoneNumber = dealer.dealer_phone.replace(/[^0-9]/g, '');
+        const encodedMessage = encodeURIComponent(finalMessage);
+        const waLink = 'https://wa.me/91' + phoneNumber + '?text=' + encodedMessage;
+
+        messages.push({
+          dealer_id: dealer.dealer_id,
+          dealer_name: dealer.dealer_name,
+          dealer_code: dealer.dealer_code,
+          dealer_phone: dealer.dealer_phone,
+          message: finalMessage,
+          waLink: waLink
+        });
+      }
+
+      setPreviewMessages(messages);
+      setSendingIndex(0);
+      setShowPreviewModal(true);
+      setSending(false);
+    } catch (e) {
+      console.error('Error:', e);
+      setToast({ msg: 'Failed to prepare messages: ' + e.message, type: 'danger' });
+      setSending(false);
+    }
+  };
+
+  const handleOpenNext = async () => {
+    const msg = previewMessages[sendingIndex];
+    window.open(msg.waLink, '_blank', 'width=800,height=600');
+
+    // Log attempt to database
+    try {
+      await fetch('/api/admin/whatsapp/logs/log-attempt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          dealer_id: msg.dealer_id,
+          phone_number: msg.dealer_phone,
+          template_id: useCustom ? null : parseInt(selectedTemplate),
+          message_sent: msg.message,
+          status: 'opened'
+        })
+      });
+    } catch (err) {
+      console.error('Failed to log:', err);
+    }
+
+    const nextIndex = sendingIndex + 1;
+    if (nextIndex >= previewMessages.length) {
+      setShowPreviewModal(false);
+      setToast({ msg: 'All WhatsApp windows opened! Send from each one.', type: 'success' });
+    } else {
+      setSendingIndex(nextIndex);
+    }
+  };
+
+  const handleOpenAll = async () => {
+    for (const msg of previewMessages) {
+      window.open(msg.waLink, '_blank', 'width=400,height=600');
+      await fetch('/api/admin/whatsapp/logs/log-attempt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          dealer_id: msg.dealer_id,
+          phone_number: msg.dealer_phone,
+          template_id: useCustom ? null : parseInt(selectedTemplate),
+          message_sent: msg.message,
+          status: 'opened'
+        })
+      }).catch(() => {});
+    }
+    setShowPreviewModal(false);
+    setToast({ msg: 'Opened WhatsApp for ' + previewMessages.length + ' dealers', type: 'success' });
+  };
+
+  const filteredDealers = dealers.filter(d =>
+    d.dealer_name.toLowerCase().includes(searchDealers.toLowerCase()) ||
+    d.dealer_code.toLowerCase().includes(searchDealers.toLowerCase())
+  );
+
+  return (
+    <div>
+      <div className="row">
+        <div className="col-md-6">
+          <div className="card">
+            <div className="card-header bg-light">
+              <h6 className="mb-0">Select Dealers</h6>
+            </div>
+            <div className="card-body">
+              <input type="text" className="form-control mb-3" placeholder="Search dealers..."
+                value={searchDealers} onChange={(e) => setSearchDealers(e.target.value)} />
+              <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                {filteredDealers.map(d => {
+                  const isSelected = selectedDealers.includes(d.dealer_id);
+                  return (
+                    <div key={d.dealer_id} className="form-check p-2" style={{
+                      background: isSelected ? '#e7f3ff' : 'transparent',
+                      borderLeft: isSelected ? '4px solid #0d6efd' : 'none',
+                      marginBottom: 4,
+                      borderRadius: 4
+                    }}>
+                      <input className="form-check-input" type="checkbox" id={`dealer_${d.dealer_id}`}
+                        checked={isSelected}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedDealers([...selectedDealers, d.dealer_id]);
+                          } else {
+                            setSelectedDealers(selectedDealers.filter(id => id !== d.dealer_id));
+                          }
+                        }} />
+                      <label className="form-check-label" htmlFor={`dealer_${d.dealer_id}`} style={{ cursor: 'pointer', marginBottom: 0 }}>
+                        {d.dealer_name} ({d.dealer_code}) {isSelected && <span className="badge bg-primary ms-2">✓</span>}
+                      </label>
+                      <br />
+                      <small className="text-muted">{d.dealer_phone}</small>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-3 p-2 bg-light rounded">
+                <strong>Selected: {selectedDealers.length} dealer(s)</strong>
+                {selectedDealers.length > 0 && (
+                  <div className="mt-2">
+                    {selectedDealers.map(dId => {
+                      const dealer = dealers.find(d => d.dealer_id === dId);
+                      return dealer ? (
+                        <span key={dId} className="badge bg-info me-1 mb-1">
+                          {dealer.dealer_name}
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="col-md-6">
+          <div className="card">
+            <div className="card-header bg-light">
+              <h6 className="mb-0">Message</h6>
+            </div>
+            <div className="card-body">
+              <div className="mb-3">
+                <div className="form-check">
+                  <input className="form-check-input" type="radio" id="useTemplate"
+                    checked={!useCustom} onChange={() => setUseCustom(false)} />
+                  <label className="form-check-label" htmlFor="useTemplate">Use Template</label>
+                </div>
+                {!useCustom && (
+                  <select className="form-select mt-2" value={selectedTemplate}
+                    onChange={(e) => setSelectedTemplate(e.target.value)}>
+                    <option value="">Select a template...</option>
+                    {templates.map(t => <option key={t.template_id} value={t.template_id}>{t.template_name}</option>)}
+                  </select>
+                )}
+              </div>
+
+              <div className="mb-3">
+                <div className="form-check">
+                  <input className="form-check-input" type="radio" id="useCustom"
+                    checked={useCustom} onChange={() => setUseCustom(true)} />
+                  <label className="form-check-label" htmlFor="useCustom">Custom Message</label>
+                </div>
+                {useCustom && (
+                  <textarea className="form-control mt-2" rows="4" value={customMessage}
+                    onChange={(e) => setCustomMessage(e.target.value)}
+                    placeholder="Write your message here..." />
+                )}
+              </div>
+
+              <div className="mb-3 p-3 border rounded" style={{ background: '#f9f9f9' }}>
+                <div className="form-check">
+                  <input className="form-check-input" type="checkbox" id="prependGreeting"
+                    checked={prependGreeting} onChange={(e) => setPrependGreeting(e.target.checked)} />
+                  <label className="form-check-label fw-semibold" htmlFor="prependGreeting">
+                    ✉️ Auto-prepend greeting with dealer name
+                  </label>
+                </div>
+                <small className="text-muted d-block mt-2">
+                  Adds "Hi [Dealer Name]," at the beginning of every message for personalization
+                </small>
+              </div>
+
+              {preview && (
+                <div className="alert alert-info">
+                  <strong>Preview (1st dealer):</strong>
+                  <p className="mb-0 mt-2" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    {prependGreeting ? 'Hi ' + (dealers.find(d => d.dealer_id === selectedDealers[0])?.dealer_name || 'Dealer') + ',\n\n' + preview : preview}
+                  </p>
+                </div>
+              )}
+
+              <button className="btn btn-success w-100" onClick={handleSend} disabled={sending}>
+                {sending ? <><span className="spinner-border spinner-border-sm me-2"></span>Sending...</> : '📤 Send Messages'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {result && (
+        <div className="card mt-4">
+          <div className="card-header bg-light">
+            <h6 className="mb-0">Send Results</h6>
+          </div>
+          <div className="card-body">
+            <div className="row">
+              <div className="col-md-4">
+                <div className="text-center p-3 bg-success bg-opacity-10 rounded">
+                  <h4 className="text-success">{result.sent.length}</h4>
+                  <small>Sent Successfully</small>
+                </div>
+              </div>
+              <div className="col-md-4">
+                <div className="text-center p-3 bg-danger bg-opacity-10 rounded">
+                  <h4 className="text-danger">{result.failed.length}</h4>
+                  <small>Failed</small>
+                </div>
+              </div>
+              <div className="col-md-4">
+                <div className="text-center p-3 bg-info bg-opacity-10 rounded">
+                  <h4 className="text-info">{result.total}</h4>
+                  <small>Total</small>
+                </div>
+              </div>
+            </div>
+            {result.failed.length > 0 && (
+              <div className="alert alert-danger mt-3">
+                <strong>Failed Messages:</strong>
+                <ul className="mb-0">
+                  {result.failed.map((f, i) => <li key={i}>{f.dealer_name}: {f.error}</li>)}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showPreviewModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', zIndex: 9999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <div style={{
+            background: '#fff', borderRadius: 8, width: '95%', maxWidth: 900,
+            maxHeight: '85vh', overflowY: 'auto', padding: 24
+          }}>
+            <div className="d-flex justify-content-between align-items-center mb-3">
+              <h5 className="mb-0">📋 Review All Messages ({previewMessages.length})</h5>
+              <button type="button" className="btn-close" onClick={() => setShowPreviewModal(false)}></button>
+            </div>
+
+            {previewMessages.length > 0 && (
+              <div>
+                <div style={{ maxHeight: '55vh', overflowY: 'auto', marginBottom: 20 }}>
+                  {previewMessages.map((msg, idx) => (
+                    <div key={idx} className="card mb-3">
+                      <div className="card-header p-3" style={{ background: '#f8f9fa' }}>
+                        <div className="d-flex justify-content-between align-items-center">
+                          <div>
+                            <strong>#{idx + 1}. {msg.dealer_name}</strong>
+                            <br />
+                            <small className="text-muted">📱 {msg.dealer_phone} | Code: {msg.dealer_code}</small>
+                          </div>
+                          <a href={msg.waLink} target="_blank" rel="noopener noreferrer" className="btn btn-success btn-sm">
+                            📱 Open WhatsApp
+                          </a>
+                        </div>
+                      </div>
+                      <div className="card-body p-2">
+                        <div className="mb-2">
+                          <strong style={{ fontSize: '0.85rem' }}>Message:</strong>
+                        </div>
+                        <div style={{
+                          background: '#f0f7ff', padding: 10, borderRadius: 4,
+                          fontSize: '0.9rem', whiteSpace: 'pre-wrap', marginBottom: 10
+                        }}>
+                          {msg.message}
+                        </div>
+                        <div style={{ fontSize: '0.8rem' }}>
+                          <button className="btn btn-outline-secondary btn-sm" onClick={() => {
+                            navigator.clipboard.writeText(msg.waLink);
+                            setToast({ msg: 'Link copied!', type: 'success' });
+                          }}>
+                            📋 Copy Link
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="alert alert-info mb-3">
+                  <strong>💡 How to send:</strong>
+                  <ul className="mb-0 mt-2">
+                    <li>Click <strong>"📱 Open WhatsApp"</strong> button next to each dealer</li>
+                    <li>Or click <strong>"📋 Copy Link"</strong> and paste in browser address bar</li>
+                    <li>Message will be pre-filled in WhatsApp - just click Send</li>
+                    <li>Repeat for each dealer</li>
+                  </ul>
+                </div>
+
+                <div className="d-flex gap-2 justify-content-between border-top pt-3">
+                  <button className="btn btn-secondary" onClick={() => setShowPreviewModal(false)}>✕ Close</button>
+                  {previewMessages.length > 1 && (
+                    <button className="btn btn-primary" onClick={handleOpenAll}>
+                      🔓 Open All ({previewMessages.length}) in New Tabs
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {toast.msg && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast({ msg: '', type: 'success' })} />}
+    </div>
+  );
+}
+
+function LogsTab() {
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [toast, setToast] = useState({ msg: '', type: 'success' });
+
+  useEffect(() => {
+    loadLogs();
+  }, [statusFilter]);
+
+  const loadLogs = async () => {
+    try {
+      let url = '/api/admin/whatsapp/logs';
+      if (statusFilter) url += `?status=${statusFilter}`;
+      const res = await fetch(url, { credentials: 'include' });
+      const data = await res.json();
+      setLogs(data.logs);
+      setLoading(false);
+    } catch (e) {
+      setToast({ msg: 'Failed to load logs', type: 'danger' });
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center"><span className="spinner-border"></span></div>;
+
+  return (
+    <div>
+      <div className="mb-3">
+        <select className="form-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <option value="">All Status</option>
+          <option value="sent">Sent</option>
+          <option value="failed">Failed</option>
+          <option value="pending">Pending</option>
+        </select>
+      </div>
+
+      <div className="table-responsive">
+        <table className="table table-sm table-hover">
+          <thead className="table-light">
+            <tr>
+              <th>Message ID</th>
+              <th>Dealer</th>
+              <th>Phone</th>
+              <th>Template</th>
+              <th>Status</th>
+              <th>Sent At</th>
+              <th>Message Preview</th>
+            </tr>
+          </thead>
+          <tbody>
+            {logs.map(log => (
+              <tr key={log.message_id}>
+                <td>#{log.message_id}</td>
+                <td>{log.dealer_name}</td>
+                <td>{log.phone_number}</td>
+                <td>{log.template_name || 'Custom'}</td>
+                <td>
+                  <span className={`badge ${log.status === 'sent' ? 'bg-success' : log.status === 'failed' ? 'bg-danger' : 'bg-warning'}`}>
+                    {log.status}
+                  </span>
+                </td>
+                <td><small>{log.sent_at ? new Date(log.sent_at).toLocaleString() : '—'}</small></td>
+                <td><small title={log.message_sent}>{log.message_sent?.substring(0, 30)}...</small></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {logs.length === 0 && <div className="alert alert-info">No messages sent yet.</div>}
+
+      {toast.msg && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast({ msg: '', type: 'success' })} />}
+    </div>
+  );
+}
+
+function App() {
+  const [activeTab, setActiveTab] = useState('templates');
+
+  return (
+    <div className="container-fluid mt-4">
+      <div className="row mb-4">
+        <div className="col">
+          <h2>📨 WhatsApp Notifications</h2>
+          <p className="text-muted">Send personalized WhatsApp messages to dealers</p>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-header">
+          <ul className="nav nav-tabs card-header-tabs" role="tablist">
+            <li className="nav-item">
+              <button className={`nav-link ${activeTab === 'templates' ? 'active' : ''}`}
+                onClick={() => setActiveTab('templates')}>📋 Templates</button>
+            </li>
+            <li className="nav-item">
+              <button className={`nav-link ${activeTab === 'send' ? 'active' : ''}`}
+                onClick={() => setActiveTab('send')}>📤 Send Message</button>
+            </li>
+            <li className="nav-item">
+              <button className={`nav-link ${activeTab === 'logs' ? 'active' : ''}`}
+                onClick={() => setActiveTab('logs')}>📜 Message Logs</button>
+            </li>
+          </ul>
+        </div>
+        <div className="card-body">
+          {activeTab === 'templates' && <TemplatesTab />}
+          {activeTab === 'send' && <SendMessageTab />}
+          {activeTab === 'logs' && <LogsTab />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById('app-root'));
+</script>
+
+<%- include('./partials/footer') %>
