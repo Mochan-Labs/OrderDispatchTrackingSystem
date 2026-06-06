@@ -31,9 +31,17 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-  font-size: .925rem;
+  font-size: 14px;
+  line-height: 1.5;
   min-height: 100vh;
 }
+
+/* Font Standardization */
+h1, h2, h3, h4, h5, h6 { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+p, span, div, a, label, button, input, select, textarea { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-size: 14px; }
+.small, .text-muted, .form-text { font-size: 12px; }
+.form-control, .form-select, .btn, .badge { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-size: 13px; }
+table, .table { font-size: 13px; }
 
 a { color: var(--navy-light); }
 a:hover { color: var(--amber); }

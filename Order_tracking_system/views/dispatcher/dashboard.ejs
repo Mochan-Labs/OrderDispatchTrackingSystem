@@ -3,6 +3,7 @@
 <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.0/dist/browser-image-compression.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <nav aria-label="breadcrumb" class="mb-3">
   <ol class="breadcrumb">
@@ -843,7 +844,7 @@ function DealerOrdersModal({ orders, dealerId, onClose, onBack, onAccept, onDisp
                         </button>
                       )}
                       {order.order_status !== 'CANCELLED' && (
-                        <button className="btn btn-sm btn-danger" onClick={() => onCancel && onCancel(order.order_id)}>
+                        <button className="btn btn-sm btn-outline-danger" onClick={() => onCancel && onCancel(order.order_id)}>
                           ❌ Cancel
                         </button>
                       )}
@@ -1076,7 +1077,7 @@ function OrderRow({ order, onAccept, onDispatch, onView, onCancel, isOrderOverdu
           <span className="text-muted small">—</span>
         )}
         {order.order_status !== 'CANCELLED' && (
-          <button className="btn btn-sm btn-danger ms-1" onClick={() => onCancel && onCancel(order.order_id)}>
+          <button className="btn btn-sm btn-outline-danger ms-1" onClick={() => onCancel && onCancel(order.order_id)}>
             ❌ Cancel
           </button>
         )}
@@ -1351,7 +1352,7 @@ function TotalDealerOrdersModal({ orders, dealerId, onClose, onBack, onView, onA
                         </button>
                       )}
                       {order.order_status !== 'CANCELLED' && (
-                        <button className="btn btn-sm btn-danger" onClick={() => onCancel && onCancel(order.order_id)}>
+                        <button className="btn btn-sm btn-outline-danger" onClick={() => onCancel && onCancel(order.order_id)}>
                           ❌ Cancel
                         </button>
                       )}
@@ -1459,6 +1460,7 @@ function App() {
 
   const [orders,          setOrders]          = useState([]);
   const [loading,         setLoading]         = useState(true);
+  const [search,          setSearch]          = useState('');
   const [showOnHold,      setShowOnHold]      = useState(true);
   const [showDispatched,  setShowDispatched]  = useState(true);
   const [dispatchModal,   setDispatchModal]   = useState(null);
@@ -1633,9 +1635,47 @@ function App() {
     }
   };
 
+  const exportDispatcherExcel = () => {
+    const data = orders.map(o => ({
+      'Order ID': o.order_id,
+      'Dealer': o.dealer_name || o.dealer_company_name || '',
+      'Products': o.items && Array.isArray(o.items) ? o.items.map(i => i.product_name).join(', ') : '',
+      'Quantity': o.order_quantity || '',
+      'Party': o.party_name_col || '',
+      'Address': o.party_address || '',
+      'Load Type': o.load_type_desc || '',
+      'Preferred Location': o.preferred_location_desc || '',
+      'Actual Location': o.actual_location_desc || '',
+      'Order Date': new Date(o.order_date).toLocaleString(),
+      'Status': o.order_status,
+      'Vehicle No': o.dispatch_vehicle_number || o.vehicle_number_on_order || '',
+      'Driver Name': o.dispatch_driver_name || o.driver_name_on_order || '',
+      'Driver Phone': o.dispatch_driver_phone || o.driver_phone_on_order || '',
+      'Bilty No': o.bilty_number || '',
+      'Dispatch Date': o.dispatch_created_at ? new Date(o.dispatch_created_at).toLocaleString() : '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Dispatcher Orders');
+    XLSX.writeFile(wb, 'Dispatcher_Orders.xlsx');
+  };
+
+  // Filter by search term
+  const filtered = orders.filter(o => {
+    if (!search) return true;
+    const searchLower = search.toLowerCase();
+    return (
+      (o.product_name && o.product_name.toLowerCase().includes(searchLower)) ||
+      (o.party_name_col && o.party_name_col.toLowerCase().includes(searchLower)) ||
+      (o.order_id && o.order_id.toString().includes(searchLower)) ||
+      (o.dealer_name && o.dealer_name.toLowerCase().includes(searchLower)) ||
+      (o.party_address && o.party_address.toLowerCase().includes(searchLower))
+    );
+  });
+
   // Group by dealer_id, preserve insertion order (already sorted by dealer_id, order_date ASC from API)
   const dealerGroups = {};
-  orders.forEach(o => {
+  filtered.forEach(o => {
     if (!dealerGroups[o.dealer_id]) dealerGroups[o.dealer_id] = [];
     dealerGroups[o.dealer_id].push(o);
   });
@@ -1844,7 +1884,7 @@ function App() {
               <span style={{ fontSize: '1.8rem' }}>⚠️</span>
               <div>
                 <div className="fs-4 fw-bold">{overdueCounts.total}</div>
-                <div className="text-muted small">Overdue Orders</div>
+                <div className="text-muted small">Overdue</div>
               </div>
             </div>
           </div>
@@ -1860,7 +1900,7 @@ function App() {
               <span style={{ fontSize: '1.8rem' }}>⏳</span>
               <div>
                 <div className="fs-4 fw-bold">{totalPending}</div>
-                <div className="text-muted small">Pending Orders</div>
+                <div className="text-muted small">Pending</div>
               </div>
             </div>
           </div>
@@ -1876,7 +1916,7 @@ function App() {
               <span style={{ fontSize: '1.8rem' }}>🚛</span>
               <div>
                 <div className="fs-4 fw-bold">{totalDispatched}</div>
-                <div className="text-muted small">Dispatched Orders</div>
+                <div className="text-muted small">Dispatched</div>
               </div>
             </div>
           </div>
@@ -1896,7 +1936,7 @@ function App() {
 
       {/* Filters */}
       <div className="d-flex align-items-center gap-3 mb-4 flex-wrap p-3 bg-white rounded shadow-sm">
-        <span className="fw-semibold text-muted small text-uppercase">Filters:</span>
+        <span className="fw-bold text-muted small text-uppercase">Filters:</span>
         <div className="d-flex gap-2 align-items-center">
           <label className="small text-muted mb-0">From:</label>
           <input type="date" className="form-control form-control-sm" style={{width: '120px'}}
@@ -1915,11 +1955,22 @@ function App() {
             checked={showDispatched} onChange={e => setShowDispatched(e.target.checked)} />
           <label className="form-check-label" htmlFor="toggleDispatched">🚛 Show Dispatched</label>
         </div>
-        <button className="btn btn-sm btn-outline-secondary ms-auto" onClick={fetchOrders} disabled={loading}>
-          {loading
-            ? <span className="spinner-border spinner-border-sm"></span>
-            : '🔄'} Refresh
-        </button>
+        <div className="ms-auto d-flex gap-2">
+          <button className="btn btn-sm btn-outline-success" onClick={exportDispatcherExcel} disabled={orders.length === 0}>
+            ⬇️ Download
+          </button>
+          <button className="btn btn-sm btn-outline-secondary" onClick={fetchOrders} disabled={loading}>
+            {loading
+              ? <span className="spinner-border spinner-border-sm"></span>
+              : '🔄'} Refresh
+          </button>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="mb-3">
+        <input className="form-control form-control-sm" placeholder="Search by product, party, dealer, address, order ID…"
+          value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
       {/* Content */}

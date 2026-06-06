@@ -978,6 +978,8 @@ function App() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [startDate, setStartDate] = useState(defaults.start);
   const [endDate, setEndDate] = useState(defaults.end);
+  const [showOnHold, setShowOnHold] = useState(true);
+  const [showDispatched, setShowDispatched] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [holdOrder, setHoldOrder] = useState(null);
   const [toast, setToast] = useState({ msg: '', type: 'success' });
@@ -1159,7 +1161,9 @@ function App() {
       .toLowerCase().includes(search.toLowerCase());
     const matchDealer = !dealerFilter || (o.dealer_name && o.dealer_name.toLowerCase().includes(dealerFilter.toLowerCase())) || o.dealer_id === parseInt(dealerFilter);
     const matchStatus = statusFilter === 'ALL' || o.order_status === statusFilter;
-    return matchSearch && matchDealer && matchStatus;
+    const matchOnHold = showOnHold || o.order_status !== 'ON_HOLD';
+    const matchDispatched = showDispatched || o.order_status !== 'DISPATCHED';
+    return matchSearch && matchDealer && matchStatus && matchOnHold && matchDispatched;
   });
 
   const sorted = [...filtered].sort((a, b) => {
@@ -1291,7 +1295,7 @@ function App() {
         <SummaryCard
           label="Dispatched"
           value={counts.dispatched}
-          icon="📦"
+          icon="🚛"
           borderColor="#198754"
           isDisabled={!IS_ADMIN_OR_OFFICE || counts.dispatched === 0}
           onClick={() => IS_ADMIN_OR_OFFICE && counts.dispatched > 0 && (setSelectedStatusForDrilldown('DISPATCHED'), setShowStatusDealers(true))}
@@ -1408,57 +1412,44 @@ function App() {
             )}
           </div>
         </div>
-        <div className="card-body">
-          <div className="row mb-3 g-2">
-            <div className="col-12 col-lg-3">
-              <input className="form-control form-control-sm" placeholder="Search by dealer, product, party, location, order ID…"
-                value={search} onChange={e => setSearch(e.target.value)} />
-            </div>
-            <div className="col-6 col-lg-3">
-              <input
-                type="date"
-                className="form-control form-control-sm"
-                value={startDate}
-                onChange={e => setStartDate(e.target.value)}
-                aria-label="Start Date"
-              />
-            </div>
-            <div className={IS_ADMIN ? "col-6 col-lg-2" : "col-6 col-lg-3"}>
-              <input
-                type="date"
-                className="form-control form-control-sm"
-                value={endDate}
-                onChange={e => setEndDate(e.target.value)}
-                aria-label="End Date"
-              />
-            </div>
-            <div className={IS_ADMIN ? "col-12 col-lg-1" : "col-12 col-lg-2"}>
-              <select className="form-select form-select-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-                <option value="ALL">All Statuses</option>
-                {Object.entries(STATUS_CONFIG).map(([k, v]) =>
-                  <option key={k} value={k}>{v.text}</option>
-                )}
-              </select>
-            </div>
-            <div className="col-12 col-lg-2 d-flex gap-1 gap-lg-2">
-              <button className="btn btn-outline-primary btn-sm flex-grow-1" onClick={applyDateFilter}>
-                Load
-              </button>
-              <button className="btn btn-outline-secondary btn-sm flex-grow-1" onClick={resetDateFilter} title={IS_ADMIN_OR_OFFICE ? 'Clear date filter' : 'Reset to last 2 days'}>
-                Reset
-              </button>
-            </div>
-            {!IS_ADMIN_OR_OFFICE && (
-              <div className="col-12">
-                <small className="text-muted">
-                  Showing orders from the last 2 days. Select a start &amp; end date above and click <strong>Load</strong> to view historical orders.
-                </small>
-              </div>
-            )}
-            <div className="col-12 col-lg-1 text-lg-end text-muted small mt-2 mt-lg-0">
-              {sorted.length} order{sorted.length !== 1 ? 's' : ''}
-            </div>
+        {/* Filters */}
+        <div className="d-flex align-items-center gap-3 mb-3 flex-wrap p-3 bg-white rounded shadow-sm">
+          <span className="fw-bold text-muted small text-uppercase">Filters:</span>
+          <div className="d-flex gap-2 align-items-center">
+            <label className="small text-muted mb-0">From:</label>
+            <input type="date" className="form-control form-control-sm" style={{width: '120px'}}
+              value={startDate} onChange={e => setStartDate(e.target.value)} />
+            <label className="small text-muted mb-0">To:</label>
+            <input type="date" className="form-control form-control-sm" style={{width: '120px'}}
+              value={endDate} onChange={e => setEndDate(e.target.value)} />
           </div>
+          <div className="form-check form-switch mb-0">
+            <input className="form-check-input" type="checkbox" id="toggleOnHold"
+              checked={showOnHold} onChange={e => setShowOnHold(e.target.checked)} />
+            <label className="form-check-label" htmlFor="toggleOnHold">⏸️ Show On Hold</label>
+          </div>
+          <div className="form-check form-switch mb-0">
+            <input className="form-check-input" type="checkbox" id="toggleDispatched"
+              checked={showDispatched} onChange={e => setShowDispatched(e.target.checked)} />
+            <label className="form-check-label" htmlFor="toggleDispatched">🚛 Show Dispatched</label>
+          </div>
+          <div className="ms-auto d-flex gap-2">
+            <button className="btn btn-sm btn-outline-success" onClick={exportExcel} disabled={filtered.length === 0}>
+              ⬇️ Download
+            </button>
+            <button className="btn btn-sm btn-outline-primary" onClick={applyDateFilter}>
+              🔄 Refresh
+            </button>
+          </div>
+        </div>
+
+        {/* Search */}
+        <div className="mb-4">
+          <input className="form-control form-control-sm" placeholder="Search by product, party, dealer, address, order ID…"
+            value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+
+        <div className="card-body">
 
           {loading ? (
             <div className="text-center py-5">
@@ -1540,179 +1531,117 @@ function App() {
                           <span className="text-muted small">—</span>
                         )}
                       </td>}
-                      <td className="text-center">
-                        {/* DESKTOP: Compact text links with pipes */}
-                        <div className="d-none d-md-block" style={{ fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          <button className="link-primary" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
-                            onClick={() => setSelectedOrder(o)}>
-                            View
+                      <td className="text-nowrap">
+                        <button className="btn btn-sm btn-outline-primary me-1" onClick={() => setSelectedOrder(o)}>
+                          👁️ View
+                        </button>
+                        {!IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
+                          <button className="btn btn-sm btn-outline-secondary me-1" onClick={() => setHoldOrder(o)}>
+                            ⏸️ Hold
                           </button>
-                          {o.dispatch?.image_url && (
-                            <a
-                              className="btn btn-info btn-sm"
-                              href={o.dispatch.image_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              title="View dispatch receipt"
-                            >
-                              📸 Receipt
+                        )}
+                        {!IS_ADMIN && o.order_status === 'ON_HOLD' && o.on_hold_by_role === 'DEALER' && (
+                          <button className="btn btn-sm btn-outline-warning me-1" onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>
+                            ⏸️ Unhold
+                          </button>
+                        )}
+                        {IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
+                          <>
+                            <button className="btn btn-sm btn-outline-info me-1" onClick={() => changeStatus(o.order_id, 'ACCEPTED')}>
+                              ✅ Accept
+                            </button>
+                            <button className="btn btn-sm btn-outline-secondary me-1" onClick={() => setHoldOrder(o)}>
+                              ⏸️ Hold
+                            </button>
+                          </>
+                        )}
+                        {IS_ADMIN && o.order_status === 'ACCEPTED' && (
+                          <button className="btn btn-sm btn-success me-1" onClick={() => changeStatus(o.order_id, 'DISPATCHED')}>
+                            🚛 Dispatch
+                          </button>
+                        )}
+                        {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && o.on_hold_by_role !== 'DEALER' && (
+                          <button className="btn btn-sm btn-outline-warning me-1" onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>
+                            ⏸️ Unhold
+                          </button>
+                        )}
+                        {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && o.on_hold_by_role === 'DEALER' && (
+                          <span className="badge bg-secondary" style={{ lineHeight: '1.5' }}>🔒 Hold</span>
+                        )}
+                        {!IS_ADMIN && (o.order_status === 'ACCEPTED' || o.order_status === 'DISPATCHED') && (
+                          <span className="badge bg-secondary" style={{ lineHeight: '1.5' }}>🔒 Locked</span>
+                        )}
+                        {!IS_ADMIN_OR_OFFICE && (
+                          <a className="btn btn-sm btn-outline-primary me-1" href={`/orders?action=new&repeat=${o.order_id}`}>
+                            🔁 Repeat
+                          </a>
+                        )}
+                        {IS_ADMIN_OR_OFFICE && (
+                          <button className="btn btn-sm btn-outline-primary me-1" onClick={() => setRepeatOrder(o)}>
+                            🔁 Repeat
+                          </button>
+                        )}
+                        {o.order_status !== 'CANCELLED' && (
+                          <button className="btn btn-sm btn-outline-danger ms-1" onClick={() => cancelOrder(o.order_id)}>
+                            ❌ Cancel
+                          </button>
+                        )}
+
+                        {/* MOBILE: Same button layout */}
+                        <div className="d-md-none" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <button className="btn btn-sm btn-outline-primary me-1" onClick={() => setSelectedOrder(o)}>
+                            👁️ View
+                          </button>
+                          {!IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
+                            <button className="btn btn-sm btn-outline-secondary me-1" onClick={() => setHoldOrder(o)}>
+                              ⏸️ Hold
+                            </button>
+                          )}
+                          {!IS_ADMIN && o.order_status === 'ON_HOLD' && o.on_hold_by_role === 'DEALER' && (
+                            <button className="btn btn-sm btn-outline-warning me-1" onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>
+                              ⏸️ Unhold
+                            </button>
+                          )}
+                          {IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
+                            <>
+                              <button className="btn btn-sm btn-outline-info me-1" onClick={() => changeStatus(o.order_id, 'ACCEPTED')}>
+                                ✅ Accept
+                              </button>
+                              <button className="btn btn-sm btn-outline-secondary me-1" onClick={() => setHoldOrder(o)}>
+                                ⏸️ Hold
+                              </button>
+                            </>
+                          )}
+                          {IS_ADMIN && o.order_status === 'ACCEPTED' && (
+                            <button className="btn btn-sm btn-success me-1" onClick={() => changeStatus(o.order_id, 'DISPATCHED')}>
+                              🚛 Dispatch
+                            </button>
+                          )}
+                          {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && o.on_hold_by_role !== 'DEALER' && (
+                            <button className="btn btn-sm btn-outline-warning me-1" onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>
+                              ⏸️ Unhold
+                            </button>
+                          )}
+                          {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && o.on_hold_by_role === 'DEALER' && (
+                            <span className="badge bg-secondary" style={{ lineHeight: '1.5' }}>🔒 Hold</span>
+                          )}
+                          {!IS_ADMIN && (o.order_status === 'ACCEPTED' || o.order_status === 'DISPATCHED') && (
+                            <span className="badge bg-secondary" style={{ lineHeight: '1.5' }}>🔒 Locked</span>
+                          )}
+                          {!IS_ADMIN_OR_OFFICE && (
+                            <a className="btn btn-sm btn-outline-primary me-1" href={`/orders?action=new&repeat=${o.order_id}`}>
+                              🔁 Repeat
                             </a>
                           )}
-                          {o.dispatch && o.dispatch.driver_phone && (
-                            <>
-                              {' | '}
-                              <a
-                                href={`/tracking?driver=${encodeURIComponent(o.dispatch.driver_phone)}&order=${o.order_id}`}
-                                style={{ textDecoration: 'underline', cursor: 'pointer' }}
-                              >
-                                Track
-                              </a>
-                            </>
-                          )}
-                          {IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
-                            <>
-                              {' | '}
-                              <button className="link-success" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => changeStatus(o.order_id, 'ACCEPTED')}>Accept</button>
-                              {' | '}
-                              <button className="link-secondary" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => setHoldOrder(o)}>Hold</button>
-                            </>
-                          )}
-                          {IS_ADMIN && o.order_status === 'ACCEPTED' && (
-                            <>
-                              {' | '}
-                              <button className="link-primary" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => changeStatus(o.order_id, 'DISPATCHED')}>Dispatch</button>
-                            </>
-                          )}
-                          {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && o.on_hold_by_role !== 'DEALER' && (
-                            <>
-                              {' | '}
-                              <button className="link-warning" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>Unhold</button>
-                            </>
-                          )}
-                          {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && o.on_hold_by_role === 'DEALER' && (
-                            <>
-                              {' | '}
-                              <span className="text-muted" style={{ fontSize: '0.8rem' }}>🔒 Dealer Hold</span>
-                            </>
-                          )}
-                          {!IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
-                            <>
-                              {' | '}
-                              <button className="link-secondary" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => setHoldOrder(o)}>Hold</button>
-                            </>
-                          )}
-                          {!IS_ADMIN && o.order_status === 'ON_HOLD' && o.on_hold_by_role === 'DEALER' && (
-                            <>
-                              {' | '}
-                              <button className="link-warning" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>Unhold</button>
-                            </>
-                          )}
-                          {!IS_ADMIN && (o.order_status === 'ACCEPTED' || o.order_status === 'DISPATCHED') && (
-                            <span className="text-muted" style={{ fontSize: '0.8rem' }}>🔒 Edit Locked</span>
-                          )}
-                          {/* Repeat Order button */}
-                          {!IS_ADMIN_OR_OFFICE && (
-                            <>
-                              {' | '}
-                              <a href={`/orders?action=new&repeat=${o.order_id}`}
-                                 style={{ textDecoration: 'underline', cursor: 'pointer', color: '#6f42c1' }}>
-                                🔁 Repeat Order
-                              </a>
-                            </>
-                          )}
                           {IS_ADMIN_OR_OFFICE && (
-                            <>
-                              {' | '}
-                              <button className="link-primary" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline', color: '#6f42c1' }} onClick={() => setRepeatOrder(o)}>🔁 Repeat Order</button>
-                            </>
+                            <button className="btn btn-sm btn-outline-primary me-1" onClick={() => setRepeatOrder(o)}>
+                              🔁 Repeat
+                            </button>
                           )}
-                          {(IS_ADMIN || IS_DISPATCHER) && o.order_status !== 'CANCELLED' && (
-                            <>
-                              {' | '}
-                              <button className="link-danger" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => cancelOrder(o.order_id)}>Cancel Order</button>
-                            </>
-                          )}
-                        </div>
-
-                        {/* MOBILE: Text links with pipes (same as desktop but smaller) */}
-                        <div className="d-md-none" style={{ fontSize: '0.75rem', lineHeight: 1.4 }}>
-                          <button className="link-primary" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
-                            onClick={() => setSelectedOrder(o)}>
-                            View
-                          </button>
-                          {o.dispatch && o.dispatch.driver_phone && (
-                            <>
-                              {' | '}
-                              <a
-                                href={`/tracking?driver=${encodeURIComponent(o.dispatch.driver_phone)}&order=${o.order_id}`}
-                                style={{ textDecoration: 'underline', cursor: 'pointer' }}
-                              >
-                                Track
-                              </a>
-                            </>
-                          )}
-                          {IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
-                            <>
-                              {' | '}
-                              <button className="link-success" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => changeStatus(o.order_id, 'ACCEPTED')}>Accept</button>
-                              {' | '}
-                              <button className="link-secondary" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => setHoldOrder(o)}>Hold</button>
-                            </>
-                          )}
-                          {IS_ADMIN && o.order_status === 'ACCEPTED' && (
-                            <>
-                              {' | '}
-                              <button className="link-primary" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => changeStatus(o.order_id, 'DISPATCHED')}>Dispatch</button>
-                            </>
-                          )}
-                          {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && o.on_hold_by_role !== 'DEALER' && (
-                            <>
-                              {' | '}
-                              <button className="link-warning" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>Unhold</button>
-                            </>
-                          )}
-                          {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && o.on_hold_by_role === 'DEALER' && (
-                            <>
-                              {' | '}
-                              <span className="text-muted" style={{ fontSize: '0.7rem' }}>🔒 Dealer Hold</span>
-                            </>
-                          )}
-                          {!IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
-                            <>
-                              {' | '}
-                              <button className="link-secondary" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => setHoldOrder(o)}>Hold</button>
-                            </>
-                          )}
-                          {!IS_ADMIN && o.order_status === 'ON_HOLD' && o.on_hold_by_role === 'DEALER' && (
-                            <>
-                              {' | '}
-                              <button className="link-warning" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>Unhold</button>
-                            </>
-                          )}
-                          {!IS_ADMIN && (o.order_status === 'ACCEPTED' || o.order_status === 'DISPATCHED') && (
-                            <span className="text-muted" style={{ fontSize: '0.7rem' }}>🔒 Edit Locked</span>
-                          )}
-                          {/* Repeat Order button */}
-                          {!IS_ADMIN_OR_OFFICE && (
-                            <>
-                              {' | '}
-                              <a href={`/orders?action=new&repeat=${o.order_id}`}
-                                 style={{ textDecoration: 'underline', cursor: 'pointer', color: '#6f42c1' }}>
-                                🔁 Repeat Order
-                              </a>
-                            </>
-                          )}
-                          {IS_ADMIN_OR_OFFICE && (
-                            <>
-                              {' | '}
-                              <button className="link-primary" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline', color: '#6f42c1' }} onClick={() => setRepeatOrder(o)}>🔁 Repeat Order</button>
-                            </>
-                          )}
-                          {(IS_ADMIN || IS_DISPATCHER) && o.order_status !== 'CANCELLED' && (
-                            <>
-                              {' | '}
-                              <button className="link-danger" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }} onClick={() => cancelOrder(o.order_id)}>Cancel Order</button>
-                            </>
+                          {o.order_status !== 'CANCELLED' && (
+                            <button className="btn btn-sm btn-outline-danger ms-1" onClick={() => cancelOrder(o.order_id)}>
+                              ❌ Cancel
+                            </button>
                           )}
                         </div>
                       </td>

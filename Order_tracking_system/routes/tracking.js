@@ -11,11 +11,34 @@ function ensureTrackingUser(req, res, next) {
 }
 
 router.get('/tracking', ensureTrackingUser, (req, res) => {
-  res.render('tracking/index', {
-    user: req.session.user,
-    defaultDriverPhone: req.query.driver || '',
-    defaultOrderId: req.query.order || ''
-  });
+  res.status(503).send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Live Tracking</title>
+      <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+      <style>
+        body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #eef2f7; }
+        .message-container { text-align: center; background: white; padding: 3rem; border-radius: 10px; box-shadow: 0 2px 8px rgba(15,37,68,.08); max-width: 400px; }
+        .icon { font-size: 3rem; margin-bottom: 1.5rem; }
+        h2 { color: #0f2544; margin-bottom: 1rem; }
+        p { color: #64748b; margin-bottom: 2rem; }
+        .btn { background: #0f2544; color: white; border: none; padding: 0.6rem 1.5rem; border-radius: 6px; text-decoration: none; display: inline-block; }
+        .btn:hover { background: #1a3a6b; color: white; }
+      </style>
+    </head>
+    <body>
+      <div class="message-container">
+        <div class="icon">🚀</div>
+        <h2>Live Tracking</h2>
+        <p>Live Tracking is currently unavailable. Real-time tracking capabilities feature will be available soon.</p>
+        <a href="/dashboard" class="btn">Back to Dashboard</a>
+      </div>
+    </body>
+    </html>
+  `);
 });
 
 router.get('/api/tracking/config', ensureTrackingUser, (req, res) => {
