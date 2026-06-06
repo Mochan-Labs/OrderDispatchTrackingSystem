@@ -1,10 +1,15 @@
 <%- include('../partials/header') %>
 
+<script>
+  const isEditMode = <%= editOrderId ? 'true' : 'false' %>;
+  const editOrderId = <%= editOrderId ? editOrderId : 'null' %>;
+</script>
+
 <nav aria-label="breadcrumb" class="mb-3">
   <ol class="breadcrumb">
     <li class="breadcrumb-item"><a href="/dashboard">Dashboard</a></li>
     <li class="breadcrumb-item"><a href="/orders">My Orders</a></li>
-    <li class="breadcrumb-item active">Place New Order</li>
+    <li class="breadcrumb-item active" id="page-title"><%= editOrderId ? 'Edit Order' : 'Place New Order' %></li>
   </ol>
 </nav>
 
@@ -13,7 +18,7 @@
     <div class="card shadow-sm border-0">
       <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
         <div>
-          <h4 class="mb-1">New Order</h4>
+          <h4 class="mb-1" id="page-header"><%= editOrderId ? 'Edit Order' : 'New Order' %></h4>
           <div class="text-muted small">Add one or more products. Party, address &amp; loading details are common to all products.</div>
         </div>
         <a href="/orders" class="btn btn-outline-secondary btn-sm">Back to Orders</a>
@@ -134,7 +139,7 @@
 
           <div class="col-12 d-flex gap-2 justify-content-end pt-2">
             <a href="/orders" class="btn btn-light border">Cancel</a>
-            <button type="submit" class="btn btn-primary" id="submit-btn">Place Order</button>
+            <button type="submit" class="btn btn-primary" id="submit-btn"><%= editOrderId ? 'Update Order' : 'Place Order' %></button>
           </div>
         </form>
       </div>
@@ -146,6 +151,7 @@
   let productsData = [];
   let dealerLimit = null;
   const repeatOrderId = new URLSearchParams(window.location.search).get('repeat');
+  const editingOrderId = isEditMode ? editOrderId : null;
 
   // ── Load dealer limit ────────────────────────────────────────────────────
   (async () => {
@@ -470,6 +476,100 @@
     setTimeout(prefillRepeatOrder, 1000);
   }
 
+  async function prefillEditOrder() {
+    if (!editingOrderId) return;
+    try {
+      console.log(`[Edit Order] Fetching order #${editingOrderId}...`);
+      const res = await fetch(`/api/dealer/orders/${editingOrderId}`, { credentials: 'include' });
+      if (!res.ok) {
+        console.error(`[Edit Order] Failed to fetch order: ${res.status}`);
+        alert('Failed to load order details');
+        window.location.href = '/orders';
+        return;
+      }
+      const order = await res.json();
+      console.log(`[Edit Order] Order data received:`, order);
+
+      // Check if order is in ORDER_PLACED status
+      if (order.order_status !== 'ORDER_PLACED') {
+        alert('Order can only be edited when in ORDER_PLACED status');
+        window.location.href = '/orders';
+        return;
+      }
+
+      // Clear existing rows and prefill items
+      const container = document.getElementById('items-container');
+      container.innerHTML = '';
+      const itemsToFill = (order.items && order.items.length > 0) ? order.items : [{}];
+      itemsToFill.forEach(item => {
+        const newRow = createItemRow();
+        container.appendChild(newRow);
+        if (item.product_id) {
+          newRow.querySelector('.item-product').value = item.product_id;
+        }
+        if (item.order_bags) {
+          const bagsInput = newRow.querySelector('.item-bags');
+          bagsInput.value = item.order_bags;
+          bagsInput.dispatchEvent(new Event('input'));
+        }
+      });
+      updateRemoveButtons();
+
+      // Prefill party
+      if (order.party_id) {
+        const partySelect = document.getElementById('party_select');
+        partySelect.value = order.party_id;
+        partySelect.dispatchEvent(new Event('change'));
+      }
+
+      // Prefill contact number and address
+      if (order.party_phone) {
+        document.getElementById('contact_number').value = order.party_phone;
+      }
+      if (order.party_address) {
+        document.getElementById('delivery_address').value = order.party_address;
+      }
+
+      // Prefill load type
+      if (order.load_type_code) {
+        document.getElementById('load_type_code').value = order.load_type_code;
+        document.getElementById('load_type_code').dispatchEvent(new Event('change'));
+      }
+
+      // Prefill preferred location
+      if (order.preferred_location_code) {
+        document.getElementById('preferred_location_code').value = order.preferred_location_code;
+      }
+
+      // Prefill Self DOT driver fields if applicable
+      if (order.load_type_code === 'SLF_DOT') {
+        if (order.driver_name_on_order) {
+          document.getElementById('driver_name').value = order.driver_name_on_order;
+        }
+        if (order.driver_phone_on_order) {
+          document.getElementById('driver_phone').value = order.driver_phone_on_order;
+        }
+        if (order.vehicle_number_on_order) {
+          document.getElementById('vehicle_number').value = order.vehicle_number_on_order;
+        }
+      }
+
+      // Show info banner
+      const banner = document.createElement('div');
+      banner.className = 'alert alert-warning mb-3';
+      banner.innerHTML = `✏️ <strong>Editing Order #${editingOrderId}</strong> — This order is in ORDER_PLACED status. You can modify the details below.`;
+      document.getElementById('new-order-form').insertBefore(banner, document.getElementById('new-order-form').firstChild);
+    } catch (e) {
+      console.error('Failed to prefill edit order:', e);
+      alert('Error loading order: ' + e.message);
+      window.location.href = '/orders';
+    }
+  }
+
+  if (editingOrderId) {
+    setTimeout(prefillEditOrder, 1000);
+  }
+
   // ── Form submit ──────────────────────────────────────────────────────────
   const form      = document.getElementById('new-order-form');
   const submitBtn = document.getElementById('submit-btn');
@@ -560,28 +660,32 @@
         vehicle_number:          document.getElementById('vehicle_number').value.trim()  || null,
       };
 
-      const response = await fetch('/api/dealer/orders', {
-        method:  'POST',
+      const url = editingOrderId ? `/api/dealer/orders/${editingOrderId}` : '/api/dealer/orders';
+      const method = editingOrderId ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method:  method,
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(payload),
       });
 
       const data = await response.json();
       if (!response.ok) {
-        let errorMsg = data.error || 'Failed to create order';
+        let errorMsg = data.error || (editingOrderId ? 'Failed to update order' : 'Failed to create order');
         if (data.error && dealerLimit && dealerLimit.admin_phone) {
           errorMsg += ` | Contact Admin: ${dealerLimit.admin_phone}`;
         }
         throw new Error(errorMsg);
       }
 
-      showAlert('success', `Order #${data.order_id} placed successfully.`);
+      const successMsg = editingOrderId ? `Order #${data.order_id} updated successfully.` : `Order #${data.order_id} placed successfully.`;
+      showAlert('success', successMsg);
       window.setTimeout(() => { window.location.href = '/orders'; }, 800);
     } catch (error) {
       showAlert('danger', error.message);
     } finally {
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Place Order';
+      submitBtn.textContent = editingOrderId ? 'Update Order' : 'Place Order';
     }
   });
 </script>

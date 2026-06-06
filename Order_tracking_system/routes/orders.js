@@ -333,6 +333,9 @@ router.get('/orders', ensureDealer, (req, res) => {
   if (!isAdmin && req.query.action === 'new') {
     return res.render('orders/new', { user: req.session.user });
   }
+  if (!isAdmin && req.query.action === 'edit' && req.query.id) {
+    return res.render('orders/new', { user: req.session.user, editOrderId: req.query.id });
+  }
   console.log(`[/orders-render] Passing to view: isDispatcher=${isDispatcher}, isAdmin=${isAdmin}, isAdminOrOffice=${isAdminOrOffice}, canViewAllOrders=${canViewAllOrders}`);
   res.render('orders/index', { user: req.session.user, isAdmin, canViewAllOrders, isAdminOrOffice, isDispatcher });
 });
@@ -926,6 +929,123 @@ router.post('/api/dealer/orders', ensureDealer, async (req, res) => {
   }
 });
 
+// PUT /api/dealer/orders/:id — edit order details (only for ORDER_PLACED status)
+router.put('/api/dealer/orders/:id', ensureDealer, async (req, res) => {
+  const { items, party_id, load_type_code, preferred_location_code, driver_name, driver_phone, vehicle_number } = req.body;
+  const orderId = parseInt(req.params.id);
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'At least one product item is required' });
+  }
+
+  const KG_PER_BAG = 50;
+  for (const [idx, item] of items.entries()) {
+    if (!item.product_id) {
+      return res.status(400).json({ error: `Row ${idx + 1}: product is required` });
+    }
+    if (!item.order_bags || parseInt(item.order_bags, 10) < 1) {
+      return res.status(400).json({ error: `Row ${idx + 1}: number of bags is required` });
+    }
+    item.order_quantity = parseFloat((parseInt(item.order_bags, 10) * KG_PER_BAG / 1000).toFixed(3));
+  }
+
+  const dealer_id = req.session.user.dealer_id;
+  if (!dealer_id) return res.status(400).json({ error: 'No dealer linked to this account.' });
+
+  const userId = req.session.user.id;
+  const totalQty = items.reduce((sum, i) => sum + i.order_quantity, 0);
+  const firstProduct = parseInt(items[0].product_id, 10);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Check that order exists and is in ORDER_PLACED status
+    const existing = await client.query(
+      'SELECT * FROM odts.dealer_orders WHERE order_id = $1 AND dealer_id = $2',
+      [orderId, dealer_id]
+    );
+    if (!existing.rows.length) return res.status(404).json({ error: 'Order not found' });
+    if (existing.rows[0].order_status !== 'ORDER_PLACED') {
+      return res.status(400).json({ error: 'Can only edit orders in ORDER_PLACED status' });
+    }
+
+    // Calculate old quantity for limit recalculation
+    const oldQuantity = parseFloat(existing.rows[0].order_quantity) || 0;
+    const quantityDiff = totalQty - oldQuantity;
+
+    // Check daily limit only if quantity increased
+    if (quantityDiff > 0) {
+      const usage = await getDealerDailyUsage(dealer_id);
+      const projectedTotal = usage.used_today + quantityDiff;
+
+      if (usage.daily_limit > 0 && projectedTotal > usage.daily_limit) {
+        return res.status(400).json({
+          error: `Daily limit exceeded. Additional: ${quantityDiff.toFixed(3)} MT, Remaining: ${usage.remaining.toFixed(3)} MT`,
+          daily_limit: usage.daily_limit,
+          used_today: usage.used_today,
+          remaining: usage.remaining
+        });
+      }
+    }
+
+    // Update the main order record
+    await client.query(`
+      UPDATE odts.dealer_orders
+      SET product_id = $1,
+          order_quantity = $2,
+          party_id = $3,
+          load_type_code = $4,
+          preferred_location_code = $5,
+          driver_name = $6,
+          driver_phone = $7,
+          vehicle_number = $8,
+          updated_by = $9,
+          updated_at = NOW()
+      WHERE order_id = $10
+    `, [
+      firstProduct,
+      Math.max(1, Math.ceil(totalQty)),
+      party_id ? parseInt(party_id, 10) : null,
+      load_type_code || null,
+      preferred_location_code || null,
+      driver_name ? driver_name.trim() : null,
+      driver_phone ? driver_phone.trim() : null,
+      vehicle_number ? vehicle_number.trim() : null,
+      userId,
+      orderId
+    ]);
+
+    // Delete existing items and insert new ones
+    await client.query('DELETE FROM odts.dealer_order_items WHERE order_id = $1', [orderId]);
+    for (const item of items) {
+      await client.query(`
+        INSERT INTO odts.dealer_order_items (order_id, product_id, order_bags, order_quantity)
+        VALUES ($1, $2, $3, $4)
+      `, [
+        orderId,
+        parseInt(item.product_id, 10),
+        item.order_bags ? parseInt(item.order_bags, 10) : null,
+        parseFloat(item.order_quantity),
+      ]);
+    }
+
+    await client.query('COMMIT');
+
+    res.json({
+      order_id: orderId,
+      order_status: 'ORDER_PLACED',
+      message: 'Order updated successfully'
+    });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
 router.patch('/api/dealer/orders/:id/status', ensureDealer, async (req, res) => {
   try {
     const { status, reason } = req.body;
@@ -1015,13 +1135,13 @@ router.patch('/api/dealer/orders/:id/status', ensureDealer, async (req, res) => 
   }
 });
 
-// PATCH /api/orders/:id/cancel — admin and dispatcher can cancel orders at any time
+// PATCH /api/orders/:id/cancel — only admin can cancel orders
 router.patch('/api/orders/:id/cancel', ensureDealer, async (req, res) => {
   try {
     const role = req.session.user.role;
-    // Only ADMIN and DISPATCHER can cancel orders
-    if (role !== 'ADMIN' && role !== 'DISPATCHER') {
-      return res.status(403).json({ error: 'Only admins and dispatchers can cancel orders' });
+    // Only ADMIN can cancel orders
+    if (role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Only admins can cancel orders' });
     }
 
     const orderId = parseInt(req.params.id);
