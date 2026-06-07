@@ -36,10 +36,13 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
 const STATUS_CONFIG = {
-  ORDER_PLACED: { text: 'Order Placed', icon: '🕐', bg: '#fd7e14', tc: '#fff' },
-  ACCEPTED:     { text: 'Accepted',     icon: '✅', bg: '#0dcaf0', tc: '#000' },
-  DISPATCHED:   { text: 'Dispatched',   icon: '🚛', bg: '#198754', tc: '#fff' },
-  ON_HOLD:      { text: 'On Hold',      icon: '⏸️', bg: '#e57373', tc: '#fff' },
+  ORDER_PLACED:       { text: 'Order Placed',           icon: '🕐', bg: '#fd7e14', tc: '#fff' },
+  ACCEPTED:           { text: 'Accepted',               icon: '✅', bg: '#0dcaf0', tc: '#000' },
+  DISPATCHED:         { text: 'Dispatched',             icon: '📦', bg: '#198754', tc: '#fff' },
+  ON_HOLD:            { text: 'On Hold',                icon: '⏸️', bg: '#e57373', tc: '#fff' },
+  dispatch_completed: { text: 'Fully Dispatched',       icon: '✅', bg: '#198754', tc: '#fff' },
+  dispatch_partial:   { text: 'Partially Dispatched',   icon: '📦', bg: '#fd7e14', tc: '#fff' },
+  dispatch_onhold:    { text: 'Dispatch on Hold',       icon: '⏸️', bg: '#e57373', tc: '#fff' },
 };
 
 function fmt(value) {
@@ -52,8 +55,10 @@ function fmt(value) {
   }).format(dt);
 }
 
-function StatusBadge({ status }) {
-  const cfg = STATUS_CONFIG[status] || { bg: '#6c757d', tc: '#fff', text: status, icon: '' };
+function StatusBadge({ status, dispatchStatus }) {
+  // Use dispatch_status if available (for dispatched orders), otherwise use order_status
+  const displayStatus = dispatchStatus || status;
+  const cfg = STATUS_CONFIG[displayStatus] || { bg: '#6c757d', tc: '#fff', text: displayStatus, icon: '' };
   return (
     <span className="badge" style={{ background: cfg.bg, color: cfg.tc }}>
       {cfg.icon} {cfg.text}
@@ -78,14 +83,47 @@ function Toast({ msg, type, onClose }) {
   );
 }
 
-function DispatchModal({ order, loadingLocations, onSubmit, onClose }) {
-  const [form, setForm] = useState({
+function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onRefresh }) {
+  // isExistingDispatch: order is already DISPATCHED (only edit quantities)
+  // isInitialDispatch: order not yet dispatched (fill in all dispatch details + quantities)
+  const isExistingDispatch = order.order_status === 'DISPATCHED' || !!order.dispatch_vehicle_number;
+  const items = parseItems(order);
+  const totalOrderBags = items.reduce((s, i) => s + (parseInt(i.order_bags || 0)), 0);
+  const totalOrderQty = items.reduce((s, i) => s + parseFloat(i.order_quantity || 0), 0);
+
+  // Initialize form with dispatch quantities for each item
+  const initialForm = {
     vehicle_number: order.load_type_code === 'SLF_DOT' ? (order.vehicle_number_on_order || '') : '',
     driver_name: order.load_type_code === 'SLF_DOT' ? (order.driver_name_on_order || '') : '',
     driver_phone: order.load_type_code === 'SLF_DOT' ? (order.driver_phone_on_order || '') : '',
     bilty_number: '',
     actual_loading_location_code: '',
-  });
+  };
+
+  // Add dispatch quantities and comments for each item
+  if (items && items.length > 0) {
+    items.forEach((item, idx) => {
+      // Use order_dispatch_bags if it exists (even if 0), otherwise use order_bags
+      const dispatchBags = item.order_dispatch_bags !== undefined ? item.order_dispatch_bags : item.order_bags || 0;
+      initialForm[`dispatch_bags_${idx}`] = dispatchBags;
+      const qtyPerBag = parseFloat(item.order_quantity || 0) / parseInt(item.order_bags || 1);
+      const dispatchQty = item.order_dispatch_quantity !== undefined ? item.order_dispatch_quantity : (dispatchBags * qtyPerBag).toFixed(3);
+      initialForm[`dispatch_quantity_${idx}`] = dispatchQty;
+      initialForm[`dispatch_comments_${idx}`] = item.order_dispatch_comments || '';
+    });
+  } else {
+    // Single item fallback
+    const dispatchBags = order.order_dispatch_bags !== undefined ? order.order_dispatch_bags : order.bags || 0;
+    initialForm['dispatch_bags'] = dispatchBags;
+    const qtyPerBag = parseFloat(order.order_quantity || order.quantity || 0) / parseInt(order.bags || 1);
+    initialForm['dispatch_quantity'] = (dispatchBags * qtyPerBag).toFixed(3);
+    initialForm['dispatch_comments'] = order.order_dispatch_comments || '';
+  }
+
+  // Overall dispatch comments
+  initialForm['dispatch_comments'] = '';
+
+  const [form, setForm] = useState(initialForm);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
 
@@ -211,22 +249,114 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose }) {
   };
 
   const submit = async () => {
-    if (!form.vehicle_number.trim())                return setErr('Vehicle number is required');
-    if (!form.driver_phone.trim())                  return setErr('Driver phone is required');
-    if (!/^\d{10}$/.test(form.driver_phone.trim())) return setErr('Driver phone must be exactly 10 digits');
-    if (!form.bilty_number.trim())                  return setErr('Bilty number is required');
-    if (!form.actual_loading_location_code)         return setErr('Actual loading location is required');
+    console.log('[DispatchModal] Submit - isExistingDispatch:', isExistingDispatch, 'order_status:', order.order_status, 'dispatch_vehicle_number:', order.dispatch_vehicle_number);
 
-    // Check if image is selected but not uploaded
-    if (selectedFile && !uploadedImageUrl && !skipUploadConfirm) {
-      setSkipUploadConfirm(true);
-      return;
+    // Validate dispatch form fields (always required for initial dispatch)
+    if (!isExistingDispatch) {
+      if (!form.vehicle_number.trim())                return setErr('Vehicle number is required');
+      if (!form.driver_phone.trim())                  return setErr('Driver phone is required');
+      if (!/^\d{10}$/.test(form.driver_phone.trim())) return setErr('Driver phone must be exactly 10 digits');
+      if (!form.bilty_number.trim())                  return setErr('Bilty number is required');
+      if (!form.actual_loading_location_code)         return setErr('Actual loading location is required');
+
+      // Check if image is selected but not uploaded
+      if (selectedFile && !uploadedImageUrl && !skipUploadConfirm) {
+        setSkipUploadConfirm(true);
+        return;
+      }
     }
 
     setErr('');
     setSaving(true);
-    const finalForm = { ...form, ...imageMetadata };
-    await onSubmit(order.order_id, finalForm);
+
+    try {
+      if (isExistingDispatch) {
+        // Editing existing dispatch: save dispatch quantities, comments, and details
+        const dispatchQuantities = items.map((item, idx) => ({
+          item_id: item.item_id,
+          dispatch_bags: parseInt(form[`dispatch_bags_${idx}`] !== undefined ? form[`dispatch_bags_${idx}`] : (item.order_dispatch_bags || item.order_bags || 0)),
+          dispatch_quantity: parseFloat(form[`dispatch_quantity_${idx}`] !== undefined ? form[`dispatch_quantity_${idx}`] : (item.order_dispatch_quantity || item.order_quantity || 0)),
+          dispatch_comments: form.dispatch_comments || item.order_dispatch_comments || ''
+        }));
+
+        console.log('[Edit Dispatch] Sending to backend:', JSON.stringify(dispatchQuantities, null, 2));
+
+        // Update dispatch record with new details
+        const dispatchUpdateRes = await fetch(`/api/dispatcher/orders/${order.order_id}/dispatch`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            vehicle_number: form.vehicle_number || order.dispatch_vehicle_number,
+            driver_name: form.driver_name || order.dispatch_driver_name,
+            driver_phone: form.driver_phone || order.dispatch_driver_phone,
+            bilty_number: form.bilty_number || order.bilty_number,
+            actual_loading_location_code: form.actual_loading_location_code || order.actual_loading_location_code
+          })
+        });
+
+        if (!dispatchUpdateRes.ok) {
+          const err = await dispatchUpdateRes.json();
+          throw new Error(err.error || 'Failed to update dispatch details');
+        }
+
+        // Update quantities and comments
+        const res = await fetch(`/api/dispatcher/orders/${order.order_id}/dispatch-quantities`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dispatchQuantities })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to update dispatch quantities');
+
+        notify(`✅ Dispatch updated to ${data.dispatch_status} status`);
+        setSaving(false);
+        onClose();
+        // Refresh orders list to show updated status
+        if (onRefresh) onRefresh();
+      } else {
+        // Initial dispatch: create dispatch record AND save dispatch quantities
+        const finalForm = { ...form, ...imageMetadata };
+
+        // First, dispatch the order
+        const dispatchRes = await fetch(`/api/dispatcher/orders/${order.order_id}/dispatch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(finalForm)
+        });
+
+        if (!dispatchRes.ok) {
+          const err = await dispatchRes.json();
+          throw new Error(err.error || 'Failed to dispatch order');
+        }
+
+        // Then save dispatch quantities
+        const dispatchQuantities = items.map((item, idx) => ({
+          item_id: item.item_id,
+          dispatch_bags: parseInt(form[`dispatch_bags_${idx}`] || 0),
+          dispatch_quantity: parseFloat(form[`dispatch_quantity_${idx}`] || 0),
+          dispatch_comments: form.dispatch_comments || ''
+        }));
+
+        const qtyRes = await fetch(`/api/dispatcher/orders/${order.order_id}/dispatch-quantities`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dispatchQuantities })
+        });
+
+        if (!qtyRes.ok) {
+          const err = await qtyRes.json();
+          throw new Error(err.error || 'Failed to save dispatch quantities');
+        }
+
+        notify(`✅ Order #${order.order_id} dispatched successfully`);
+        onClose();
+        // Refresh orders list to show updated status
+        if (onRefresh) onRefresh();
+      }
+    } catch (e) {
+      setErr(e.message);
+    }
     setSaving(false);
   };
 
@@ -236,7 +366,9 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose }) {
         <div className="modal-content">
 
           <div className="modal-header" style={{ background: '#198754', color: '#fff' }}>
-            <h5 className="modal-title">🚛 Dispatch — Order #{order.order_id}</h5>
+            <h5 className="modal-title">
+              🚛 Dispatch — Order #{order.order_id}
+            </h5>
             <button type="button" className="btn-close btn-close-white" onClick={onClose}></button>
           </div>
 
@@ -251,57 +383,114 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose }) {
                 <div className="text-muted small">Order Time</div>
                 <div className="fw-semibold" style={{ fontSize: '.85rem' }}>{fmt(order.order_date)}</div>
               </div>
-              {/* Products & Quantities */}
-              {(() => {
-                const items = parseItems(order);
-                const total = items.reduce((s, i) => s + parseFloat(i.order_quantity || 0), 0);
-                if (items.length > 1) {
-                  return (
-                    <div className="col-12">
-                      <div className="text-muted small mb-1 fw-semibold">Products &amp; Quantities</div>
-                      <table className="table table-sm table-bordered mb-0" style={{ fontSize: '.85rem', background: '#fff' }}>
-                        <thead className="table-light">
-                          <tr><th>Product</th><th style={{ width: 80 }}>Bags</th><th style={{ width: 100 }}>Qty (MT)</th></tr>
-                        </thead>
-                        <tbody>
-                          {items.map((item, idx) => (
-                            <tr key={idx}>
-                              <td>{item.product_name || `#${item.product_id}`}</td>
-                              <td>{item.order_bags || '—'}</td>
-                              <td>{parseFloat(item.order_quantity).toFixed(3)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr className="table-secondary fw-bold">
-                            <td colSpan={2} className="text-muted small">Total</td>
-                            <td>{total.toFixed(3)}</td>
+              {/* Products & Quantities — with dispatch columns in edit mode */}
+              <div className="col-12">
+                <div className="text-muted small mb-1 fw-semibold">Products &amp; Quantities</div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="table table-sm table-bordered mb-0" style={{ fontSize: '.80rem', background: '#fff', minWidth: '100%' }}>
+                    <thead className="table-light">
+                      <tr>
+                        <th style={{ minWidth: 150 }}>Product</th>
+                        <th style={{ width: 70 }}>Bags</th>
+                        <th style={{ width: 90 }}>Qty (MT)</th>
+                        <th style={{ width: 70, background: '#e3f2fd' }}>Dispatch Bags</th>
+                        <th style={{ width: 90, background: '#e3f2fd' }}>Dispatch Qty</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items && items.length > 0 ? (
+                        items.map((item, idx) => (
+                          <tr key={idx}>
+                            <td>{item.product_name || `#${item.product_id}`}</td>
+                            <td>{item.order_bags || '—'}</td>
+                            <td>{parseFloat(item.order_quantity).toFixed(3)}</td>
+                            <td style={{ background: '#f5f5f5' }}>
+                              <input
+                                type="number"
+                                min="0"
+                                max={item.order_bags}
+                                step="1"
+                                className="form-control form-control-sm"
+                                value={form[`dispatch_bags_${idx}`] !== undefined ? form[`dispatch_bags_${idx}`] : (item.order_dispatch_bags || item.order_bags || 0)}
+                                onChange={(e) => {
+                                  let bags = parseInt(e.target.value) || 0;
+                                  // Cap the value at order_bags
+                                  if (bags > parseInt(item.order_bags)) {
+                                    bags = parseInt(item.order_bags);
+                                  }
+                                  const qtyPerBag = parseFloat(item.order_quantity || 0) / parseInt(item.order_bags || 1);
+                                  const qty = (bags * qtyPerBag).toFixed(3);
+                                  setForm(f => ({ ...f, [`dispatch_bags_${idx}`]: bags, [`dispatch_quantity_${idx}`]: parseFloat(qty) }));
+                                }}
+                                title={`Maximum: ${item.order_bags} bags`}
+                              />
+                            </td>
+                            <td style={{ background: '#f5f5f5' }}>
+                              <input
+                                type="number"
+                                step="0.001"
+                                className="form-control form-control-sm bg-light"
+                                value={form[`dispatch_quantity_${idx}`] !== undefined ? form[`dispatch_quantity_${idx}`] : (item.order_dispatch_quantity || item.order_quantity || 0)}
+                                readOnly
+                              />
+                            </td>
                           </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                  );
-                }
-                const single = items[0];
-                return (
-                  <>
-                    <div className="col-6 col-md-4">
-                      <div className="text-muted small">Product</div>
-                      <div className="fw-semibold">{single ? (single.product_name || `#${single.product_id}`) : '—'}</div>
-                    </div>
-                    <div className="col-6 col-md-4">
-                      <div className="text-muted small">Quantity</div>
-                      <div className="fw-semibold">{single ? parseFloat(single.order_quantity).toFixed(3) : (order.order_quantity || '—')} MT</div>
-                    </div>
-                    {single && single.order_bags && (
-                      <div className="col-6 col-md-4">
-                        <div className="text-muted small">No. of Bags</div>
-                        <div className="fw-semibold">{single.order_bags}</div>
-                      </div>
+                        ))
+                      ) : (
+                        <tr>
+                          <td>{order.product_name || '—'}</td>
+                          <td>—</td>
+                          <td>{parseFloat(order.order_quantity || 0).toFixed(3)}</td>
+                          <td style={{ background: '#f5f5f5' }}>
+                            <input
+                              type="number"
+                              min="0"
+                              max={order.bags}
+                              step="1"
+                              className="form-control form-control-sm"
+                              value={form.dispatch_bags !== undefined ? form.dispatch_bags : (order.order_dispatch_bags || order.bags || 0)}
+                              onChange={(e) => {
+                                let bags = parseInt(e.target.value) || 0;
+                                // Cap the value at order_bags
+                                if (bags > parseInt(order.bags)) {
+                                  bags = parseInt(order.bags);
+                                }
+                                const qtyPerBag = parseFloat(order.order_quantity || order.quantity || 0) / parseInt(order.bags || 1);
+                                const qty = (bags * qtyPerBag).toFixed(3);
+                                setForm(f => ({ ...f, dispatch_bags: bags, dispatch_quantity: parseFloat(qty) }));
+                              }}
+                              title={`Maximum: ${order.bags} bags`}
+                            />
+                          </td>
+                          <td style={{ background: '#f5f5f5' }}>
+                            <input
+                              type="number"
+                              step="0.001"
+                              className="form-control form-control-sm bg-light"
+                              value={form.dispatch_quantity !== undefined ? form.dispatch_quantity : (order.order_dispatch_quantity || order.order_quantity || 0)}
+                              readOnly
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                    {items && items.length > 1 && (
+                      <tfoot>
+                        <tr className="table-secondary fw-bold">
+                          <td colSpan="3" className="text-muted small text-end">Total</td>
+                          <td style={{ background: '#e0e0e0' }}>
+                            {items.reduce((s, i, idx) => s + (parseInt(form[`dispatch_bags_${idx}`] !== undefined ? form[`dispatch_bags_${idx}`] : (i.order_dispatch_bags || i.order_bags || 0))), 0)}
+                          </td>
+                          <td style={{ background: '#e0e0e0' }}>
+                            {items.reduce((s, i, idx) => s + parseFloat(form[`dispatch_quantity_${idx}`] !== undefined ? form[`dispatch_quantity_${idx}`] : (i.order_dispatch_quantity || i.order_quantity || 0)), 0).toFixed(3)}
+                          </td>
+                        </tr>
+                      </tfoot>
                     )}
-                  </>
-                );
-              })()}
+                  </table>
+                </div>
+              </div>
+
               <div className="col-6 col-md-4">
                 <div className="text-muted small">Party</div>
                 <div className="fw-semibold">{order.party_company_name || order.party_name_col || '—'}</div>
@@ -328,161 +517,243 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose }) {
               </div>
             </div>
 
-            {/* Receipt upload section */}
-            <div className="mb-4 p-3 border rounded" style={{ background: '#fffbf0', borderColor: '#ffe0b2' }}>
-              <h6 className="fw-bold text-muted text-uppercase small mb-3">📸 Receipt Photo (Optional)</h6>
+            {/* Receipt upload section - only show for initial dispatch */}
+            {!isExistingDispatch && (
+              <div className="mb-4 p-3 border rounded" style={{ background: '#fffbf0', borderColor: '#ffe0b2' }}>
+                <h6 className="fw-bold text-muted text-uppercase small mb-3">📸 Receipt Photo (Optional)</h6>
 
-              {!uploadedImageUrl ? (
-                <>
-                  <div className="mb-3">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleFileSelect}
-                      disabled={uploading}
-                      className="form-control"
-                    />
-                    <small className="text-muted d-block mt-1">Accepted: JPG, PNG, GIF, WebP. Auto-compressed to ~500 KB if larger.</small>
-                  </div>
-
-                  {imagePreview && (
+                {!uploadedImageUrl ? (
+                  <>
                     <div className="mb-3">
-                      <div className="mb-2">
-                        <img src={imagePreview} alt="Preview" style={{ maxWidth: '100%', maxHeight: 150, borderRadius: 4 }} />
-                      </div>
-                      {!uploading && (
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-primary"
-                          onClick={uploadReceipt}
-                          disabled={uploading}
-                        >
-                          📤 Upload Receipt
-                        </button>
-                      )}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleFileSelect}
+                        disabled={uploading}
+                        className="form-control"
+                      />
+                      <small className="text-muted d-block mt-1">Accepted: JPG, PNG, GIF, WebP. Auto-compressed to ~500 KB if larger.</small>
                     </div>
-                  )}
 
-                  {uploading && (
-                    <div className="mb-3">
-                      <div className="progress" style={{ height: 24 }}>
-                        <div
-                          className="progress-bar progress-bar-striped progress-bar-animated"
-                          style={{ width: `${uploadProgress}%` }}
-                        >
-                          {uploadProgress}%
+                    {imagePreview && (
+                      <div className="mb-3">
+                        <div className="mb-2">
+                          <img src={imagePreview} alt="Preview" style={{ maxWidth: '100%', maxHeight: 150, borderRadius: 4 }} />
+                        </div>
+                        {!uploading && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-primary"
+                            onClick={uploadReceipt}
+                            disabled={uploading}
+                          >
+                            📤 Upload Receipt
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {uploading && (
+                      <div className="mb-3">
+                        <div className="progress" style={{ height: 24 }}>
+                          <div
+                            className="progress-bar progress-bar-striped progress-bar-animated"
+                            style={{ width: `${uploadProgress}%` }}
+                          >
+                            {uploadProgress}%
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="alert alert-success py-2 mb-0">
-                  ✅ Receipt uploaded successfully
-                </div>
-              )}
+                    )}
+                  </>
+                ) : (
+                  <div className="alert alert-success py-2 mb-0">
+                    ✅ Receipt uploaded successfully
+                  </div>
+                )}
 
-              {skipUploadConfirm && !uploadedImageUrl && (
-                <div className="alert alert-warning py-2 mt-2 mb-0">
-                  <strong>⚠️ No receipt uploaded</strong>
-                  <p className="mb-2 mt-2">You have not uploaded a receipt for this order. Do you want to continue without it?</p>
-                  <div className="btn-group btn-group-sm" role="group">
-                    <button
-                      type="button"
-                      className="btn btn-warning"
-                      onClick={() => setSkipUploadConfirm(false)}
+                {skipUploadConfirm && !uploadedImageUrl && (
+                  <div className="alert alert-warning py-2 mt-2 mb-0">
+                    <strong>⚠️ No receipt uploaded</strong>
+                    <p className="mb-2 mt-2">You have not uploaded a receipt for this order. Do you want to continue without it?</p>
+                    <div className="btn-group btn-group-sm" role="group">
+                      <button
+                        type="button"
+                        className="btn btn-warning"
+                        onClick={() => setSkipUploadConfirm(false)}
+                      >
+                        No, Upload Receipt
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-outline-warning"
+                        onClick={() => {
+                          setSkipUploadConfirm(false);
+                          setSaving(true);
+                          onSubmit(order.order_id, { ...form, ...imageMetadata });
+                        }}
+                      >
+                        Yes, Continue Without Receipt
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Current Dispatch Details - editable in edit mode */}
+            {isExistingDispatch && (
+              <div className="mb-4 p-3 border rounded" style={{ background: '#f0f8ff', borderColor: '#b0d4f1' }}>
+                <h6 className="fw-bold text-primary text-uppercase small mb-3">Dispatch Information (Editable)</h6>
+                <div className="row g-3">
+                  <div className="col-md-6">
+                    <label className="form-label fw-semibold">Vehicle Number</label>
+                    <input
+                      type="text"
+                      className="form-control text-uppercase"
+                      value={form.vehicle_number || order.dispatch_vehicle_number || ''}
+                      onChange={(e) => setForm(f => ({ ...f, vehicle_number: e.target.value.toUpperCase() }))}
+                    />
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label fw-semibold">Driver Name</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={form.driver_name || order.dispatch_driver_name || ''}
+                      onChange={(e) => setForm(f => ({ ...f, driver_name: e.target.value }))}
+                    />
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label fw-semibold">Driver Phone</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      maxLength="10"
+                      value={form.driver_phone || order.dispatch_driver_phone || ''}
+                      onChange={(e) => setForm(f => ({ ...f, driver_phone: e.target.value.replace(/\D/g, '') }))}
+                    />
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label fw-semibold">Bilty Number</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={form.bilty_number || order.bilty_number || ''}
+                      onChange={(e) => setForm(f => ({ ...f, bilty_number: e.target.value }))}
+                    />
+                  </div>
+                  <div className="col-12">
+                    <label className="form-label fw-semibold">Actual Loading Location</label>
+                    <select
+                      className="form-select"
+                      value={form.actual_loading_location_code || order.actual_loading_location_code || ''}
+                      onChange={(e) => setForm(f => ({ ...f, actual_loading_location_code: e.target.value }))}
                     >
-                      No, Upload Receipt
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-outline-warning"
-                      onClick={() => {
-                        setSkipUploadConfirm(false);
-                        setSaving(true);
-                        onSubmit(order.order_id, { ...form, ...imageMetadata });
-                      }}
-                    >
-                      Yes, Continue Without Receipt
-                    </button>
+                      <option value="">-- Select Location --</option>
+                      {loadingLocations.map(l => (
+                        <option key={l.code} value={l.code}>
+                          {l.code_desc || l.code}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
-            {/* Dispatch form */}
-            <h6 className="fw-bold text-muted text-uppercase small mb-3">Enter Dispatch Details</h6>
-            {err && !skipUploadConfirm && <div className="alert alert-danger py-2 mb-3">{err}</div>}
+            {/* Dispatch form - only show for initial dispatch */}
+            {!isExistingDispatch && (
+              <>
+                <h6 className="fw-bold text-muted text-uppercase small mb-3">Enter Dispatch Details</h6>
+                {err && !skipUploadConfirm && <div className="alert alert-danger py-2 mb-3">{err}</div>}
 
-            <div className="row g-3">
-              <div className="col-md-6">
-                <label className="form-label fw-semibold">
-                  Vehicle Number <span className="text-danger">*</span>
-                </label>
-                <input
-                  className="form-control text-uppercase"
-                  placeholder="e.g. UP32AB1234"
-                  value={form.vehicle_number}
-                  onChange={e => set('vehicle_number', e.target.value.toUpperCase())}
-                />
-              </div>
-              <div className="col-md-6">
-                <label className="form-label fw-semibold">
-                  Bilty Number <span className="text-danger">*</span>
-                </label>
-                <input
+                <div className="row g-3">
+                  <div className="col-md-6">
+                    <label className="form-label fw-semibold">
+                      Vehicle Number <span className="text-danger">*</span>
+                    </label>
+                    <input
+                      className="form-control text-uppercase"
+                      placeholder="e.g. UP32AB1234"
+                      value={form.vehicle_number}
+                      onChange={e => set('vehicle_number', e.target.value.toUpperCase())}
+                    />
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label fw-semibold">
+                      Bilty Number <span className="text-danger">*</span>
+                    </label>
+                    <input
+                      className="form-control"
+                      placeholder="Transport receipt / bilty number"
+                      value={form.bilty_number}
+                      onChange={e => set('bilty_number', e.target.value)}
+                    />
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label fw-semibold">Driver Name</label>
+                    <input
+                      className="form-control"
+                      placeholder="Driver full name (optional)"
+                      value={form.driver_name}
+                      onChange={e => set('driver_name', e.target.value)}
+                    />
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label fw-semibold">
+                      Driver Phone <span className="text-danger">*</span>
+                    </label>
+                    <input
+                      className="form-control"
+                      placeholder="10-digit mobile number"
+                      maxLength={10}
+                      value={form.driver_phone}
+                      onChange={e => set('driver_phone', e.target.value.replace(/\D/g, ''))}
+                    />
+                  </div>
+                  <div className="col-12">
+                    <label className="form-label fw-semibold">
+                      Actual Loading Location <span className="text-danger">*</span>
+                    </label>
+                    <select
+                      className="form-select"
+                      value={form.actual_loading_location_code}
+                      onChange={e => set('actual_loading_location_code', e.target.value)}
+                    >
+                      <option value="">-- Select Actual Loading Location --</option>
+                      {loadingLocations.map(l => (
+                        <option key={l.code} value={l.code}>
+                          {l.code_desc || l.code}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </>
+            )}
+            {isExistingDispatch && err && <div className="alert alert-danger py-2 mb-3">{err}</div>}
+
+            {/* Comments section - only show in edit mode */}
+            {isExistingDispatch && (
+              <div className="mb-4 p-3 border rounded" style={{ background: '#f9f9f9', borderColor: '#ddd' }}>
+                <h6 className="fw-bold text-muted text-uppercase small mb-3">📝 Dispatch Comments (Optional)</h6>
+                <textarea
                   className="form-control"
-                  placeholder="Transport receipt / bilty number"
-                  value={form.bilty_number}
-                  onChange={e => set('bilty_number', e.target.value)}
+                  placeholder="Add any comments about this dispatch (e.g., partial dispatch reason, customer notes, etc.)"
+                  rows="3"
+                  value={form.dispatch_comments || ''}
+                  onChange={(e) => setForm(f => ({ ...f, dispatch_comments: e.target.value }))}
                 />
               </div>
-              <div className="col-md-6">
-                <label className="form-label fw-semibold">Driver Name</label>
-                <input
-                  className="form-control"
-                  placeholder="Driver full name (optional)"
-                  value={form.driver_name}
-                  onChange={e => set('driver_name', e.target.value)}
-                />
-              </div>
-              <div className="col-md-6">
-                <label className="form-label fw-semibold">
-                  Driver Phone <span className="text-danger">*</span>
-                </label>
-                <input
-                  className="form-control"
-                  placeholder="10-digit mobile number"
-                  maxLength={10}
-                  value={form.driver_phone}
-                  onChange={e => set('driver_phone', e.target.value.replace(/\D/g, ''))}
-                />
-              </div>
-              <div className="col-12">
-                <label className="form-label fw-semibold">
-                  Actual Loading Location <span className="text-danger">*</span>
-                </label>
-                <select
-                  className="form-select"
-                  value={form.actual_loading_location_code}
-                  onChange={e => set('actual_loading_location_code', e.target.value)}
-                >
-                  <option value="">-- Select Actual Loading Location --</option>
-                  {loadingLocations.map(l => (
-                    <option key={l.code} value={l.code}>
-                      {l.code_desc || l.code}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
+            )}
           </div>
 
           <div className="modal-footer">
             <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
             <button className="btn btn-success" disabled={saving} onClick={submit}>
               {saving && <span className="spinner-border spinner-border-sm me-1"></span>}
-              🚛 Confirm Dispatch
+              {isExistingDispatch ? '💾 Save Changes' : '🚛 Confirm Dispatch'}
             </button>
           </div>
 
@@ -554,7 +825,7 @@ function ViewOrderModal({ order, onClose, onBack }) {
               <div className="col-md-4">
                 <div className="p-3 bg-light rounded">
                   <div className="text-muted small">Status</div>
-                  <div><StatusBadge status={order.order_status} /></div>
+                  <div><StatusBadge status={order.order_status} dispatchStatus={order.dispatch_status} /></div>
                 </div>
               </div>
               <div className="col-12">
@@ -566,6 +837,12 @@ function ViewOrderModal({ order, onClose, onBack }) {
                         <th>Product</th>
                         <th style={{ width: 90 }}>Bags</th>
                         <th style={{ width: 110 }}>Qty (MT)</th>
+                        {order.dispatch_id && (
+                          <>
+                            <th style={{ width: 90, background: '#e3f2fd' }}>Dispatch Bags</th>
+                            <th style={{ width: 110, background: '#e3f2fd' }}>Dispatch Qty</th>
+                          </>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
@@ -575,10 +852,16 @@ function ViewOrderModal({ order, onClose, onBack }) {
                             <td>{item.product_name || `#${item.product_id}`}</td>
                             <td>{item.order_bags || '—'}</td>
                             <td>{parseFloat(item.order_quantity).toFixed(3)}</td>
+                            {order.dispatch_id && (
+                              <>
+                                <td style={{ background: '#f5f5f5' }}>{item.order_dispatch_bags || '—'}</td>
+                                <td style={{ background: '#f5f5f5' }}>{item.order_dispatch_quantity ? parseFloat(item.order_dispatch_quantity).toFixed(3) : '—'}</td>
+                              </>
+                            )}
                           </tr>
                         ))
                       ) : (
-                        <tr><td colSpan={3} className="text-muted text-center py-2">No items</td></tr>
+                        <tr><td colSpan={order.dispatch_id ? 5 : 3} className="text-muted text-center py-2">No items</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -754,7 +1037,7 @@ function PendingDealersModal({ orders, onSelectDealer, onClose }) {
   );
 }
 
-function DealerOrdersModal({ orders, dealerId, onClose, onBack, onAccept, onDispatch, onView, onCancel }) {
+function DealerOrdersModal({ orders, dealerId, onClose, onBack, onAccept, onDispatch, onView }) {
   const [accepting, setAccepting] = useState({});
 
   const dealerOrders = orders
@@ -796,7 +1079,7 @@ function DealerOrdersModal({ orders, dealerId, onClose, onBack, onAccept, onDisp
                         <div className="fw-semibold">Order #{order.order_id}</div>
                         <small className="text-muted">{fmt(order.order_date)}</small>
                       </div>
-                      <StatusBadge status={order.order_status} />
+                      <StatusBadge status={order.order_status} dispatchStatus={order.dispatch_status} />
                     </div>
                     <div className="row g-2 small mb-3">
                       <div className="col-6 col-sm-3">
@@ -841,11 +1124,6 @@ function DealerOrdersModal({ orders, dealerId, onClose, onBack, onAccept, onDisp
                       {order.order_status === 'ACCEPTED' && (
                         <button className="btn btn-sm btn-success" onClick={() => onDispatch(order)}>
                           🚛 Dispatch
-                        </button>
-                      )}
-                      {order.order_status !== 'CANCELLED' && (
-                        <button className="btn btn-sm btn-outline-danger" onClick={() => onCancel && onCancel(order.order_id)}>
-                          ❌ Cancel
                         </button>
                       )}
                     </div>
@@ -953,7 +1231,7 @@ function DealerDispatchedOrdersModal({ orders, dealerId, onClose, onBack, onView
                         <div className="fw-semibold">Order #{order.order_id}</div>
                         <small className="text-muted">Dispatched: {fmt(order.dispatch_created_at)}</small>
                       </div>
-                      <StatusBadge status={order.order_status} />
+                      <StatusBadge status={order.order_status} dispatchStatus={order.dispatch_status} />
                     </div>
                     <div className="row g-2 small mb-3">
                       <div className="col-6 col-sm-2">
@@ -1008,7 +1286,7 @@ function DealerDispatchedOrdersModal({ orders, dealerId, onClose, onBack, onView
   );
 }
 
-function OrderRow({ order, onAccept, onDispatch, onView, onCancel, isOrderOverdue }) {
+function OrderRow({ order, onAccept, onDispatch, onView, isOrderOverdue }) {
   const [accepting, setAccepting] = useState(false);
 
   const handleAccept = async () => {
@@ -1048,7 +1326,7 @@ function OrderRow({ order, onAccept, onDispatch, onView, onCancel, isOrderOverdu
           <span className="text-muted small">—</span>
         )}
       </td>
-      <td><StatusBadge status={order.order_status} /></td>
+      <td><StatusBadge status={order.order_status} dispatchStatus={order.dispatch_status} /></td>
       <td className="text-nowrap">
         <button className="btn btn-sm btn-outline-primary me-1" onClick={() => onView(order)}>
           👁️ View
@@ -1066,20 +1344,20 @@ function OrderRow({ order, onAccept, onDispatch, onView, onCancel, isOrderOverdu
           </button>
         )}
         {order.order_status === 'DISPATCHED' && (
-          <div style={{ fontSize: '.8rem' }}>
-            {order.dispatch_vehicle_number && <div className="text-muted">🚗 {order.dispatch_vehicle_number}</div>}
-            {order.driver_phone && (
-              <a href={`tel:${order.driver_phone}`} className="d-block">📞 {order.driver_phone}</a>
-            )}
-          </div>
+          <>
+            <button className="btn btn-sm btn-warning me-1" onClick={() => onDispatch(order)}>
+              ✏️ Edit Dispatch
+            </button>
+            <div style={{ fontSize: '.8rem', marginTop: '0.5rem' }}>
+              {order.dispatch_vehicle_number && <div className="text-muted">🚗 {order.dispatch_vehicle_number}</div>}
+              {order.dispatch_driver_phone && (
+                <a href={`tel:${order.dispatch_driver_phone}`} className="d-block">📞 {order.dispatch_driver_phone}</a>
+              )}
+            </div>
+          </>
         )}
         {order.order_status === 'ON_HOLD' && (
           <span className="text-muted small">—</span>
-        )}
-        {order.order_status !== 'CANCELLED' && (
-          <button className="btn btn-sm btn-outline-danger ms-1" onClick={() => onCancel && onCancel(order.order_id)}>
-            ❌ Cancel
-          </button>
         )}
       </td>
     </tr>
@@ -1158,7 +1436,7 @@ function OverdueOrdersModal({ orders, dealerId, onClose, onBack, onView, onAccep
                         <div className="fw-semibold">Order #{o.order_id}</div>
                         <small className="text-muted">{fmt(o.order_date)}</small>
                       </div>
-                      <StatusBadge status={o.order_status} />
+                      <StatusBadge status={o.order_status} dispatchStatus={o.dispatch_status} />
                     </div>
                     <div className="row g-2 small mb-2">
                       <div className="col-6">
@@ -1285,7 +1563,7 @@ function TotalOrdersListModal({ orders, onClose, onView, onAccept, onDispatch })
   );
 }
 
-function TotalDealerOrdersModal({ orders, dealerId, onClose, onBack, onView, onAccept, onDispatch, onCancel }) {
+function TotalDealerOrdersModal({ orders, dealerId, onClose, onBack, onView, onAccept, onDispatch }) {
   const dealerOrders = orders.filter(o => o.dealer_id === dealerId);
   const dealerName = dealerOrders[0]?.dealer_login_name || dealerOrders[0]?.dealer_company_name || dealerOrders[0]?.dealer_name || `Dealer #${dealerId}`;
 
@@ -1312,7 +1590,7 @@ function TotalDealerOrdersModal({ orders, dealerId, onClose, onBack, onView, onA
                         <div className="fw-semibold">Order #{order.order_id}</div>
                         <small className="text-muted">{fmt(order.order_date)}</small>
                       </div>
-                      <StatusBadge status={order.order_status} />
+                      <StatusBadge status={order.order_status} dispatchStatus={order.dispatch_status} />
                     </div>
                     <div className="row g-2 small mb-3">
                       <div className="col-6 col-sm-3">
@@ -1351,11 +1629,6 @@ function TotalDealerOrdersModal({ orders, dealerId, onClose, onBack, onView, onA
                           🚛 Dispatch
                         </button>
                       )}
-                      {order.order_status !== 'CANCELLED' && (
-                        <button className="btn btn-sm btn-outline-danger" onClick={() => onCancel && onCancel(order.order_id)}>
-                          ❌ Cancel
-                        </button>
-                      )}
                     </div>
                   </div>
                 ))}
@@ -1368,7 +1641,7 @@ function TotalDealerOrdersModal({ orders, dealerId, onClose, onBack, onView, onA
   );
 }
 
-function DealerGroup({ orders, onAccept, onDispatch, onView, onCancel, isOrderOverdue }) {
+function DealerGroup({ orders, onAccept, onDispatch, onView, isOrderOverdue }) {
   const [expanded, setExpanded] = useState(true);
 
   const placedCount    = orders.filter(o => o.order_status === 'ORDER_PLACED').length;
@@ -1433,7 +1706,7 @@ function DealerGroup({ orders, onAccept, onDispatch, onView, onCancel, isOrderOv
                     onAccept={onAccept}
                     onDispatch={onDispatch}
                     onView={onView}
-                    onCancel={onCancel}
+                    
                     isOrderOverdue={isOrderOverdue}
                   />
                 ))}
@@ -1526,9 +1799,8 @@ function App() {
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
-    const statuses = ['ORDER_PLACED', 'ACCEPTED'];
+    const statuses = ['ORDER_PLACED', 'ACCEPTED', 'DISPATCHED'];
     if (showOnHold)     statuses.push('ON_HOLD');
-    if (showDispatched) statuses.push('DISPATCHED');
     try {
       const params = new URLSearchParams();
       params.set('statuses', statuses.join(','));
@@ -1618,42 +1890,66 @@ function App() {
     }
   };
 
-  const handleCancel = async (orderId) => {
-    if (!window.confirm('Are you sure you want to cancel this order? This action cannot be undone.')) return;
-    const r = await fetch(`/api/orders/${orderId}/cancel`, {
-      method:  'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ cancellation_reason: '' }),
-    });
-    if (r.ok) {
-      notify(`Order #${orderId} cancelled`);
-      setSelectedDealerId(null);
-      fetchOrders();
-    } else {
-      const d = await r.json().catch(() => ({}));
-      notify(d.error || 'Failed to cancel', 'error');
-    }
-  };
-
   const exportDispatcherExcel = () => {
-    const data = orders.map(o => ({
-      'Order ID': o.order_id,
-      'Dealer': o.dealer_name || o.dealer_company_name || '',
-      'Products': o.items && Array.isArray(o.items) ? o.items.map(i => i.product_name).join(', ') : '',
-      'Quantity': o.order_quantity || '',
-      'Party': o.party_name_col || '',
-      'Address': o.party_address || '',
-      'Load Type': o.load_type_desc || '',
-      'Preferred Location': o.preferred_location_desc || '',
-      'Actual Location': o.actual_location_desc || '',
-      'Order Date': new Date(o.order_date).toLocaleString(),
-      'Status': o.order_status,
-      'Vehicle No': o.dispatch_vehicle_number || o.vehicle_number_on_order || '',
-      'Driver Name': o.dispatch_driver_name || o.driver_name_on_order || '',
-      'Driver Phone': o.dispatch_driver_phone || o.driver_phone_on_order || '',
-      'Bilty No': o.bilty_number || '',
-      'Dispatch Date': o.dispatch_created_at ? new Date(o.dispatch_created_at).toLocaleString() : '',
-    }));
+    const data = [];
+    orders.forEach(o => {
+      // Determine real-time status: use dispatch_status if dispatched, otherwise use order_status
+      const realStatus = o.order_status === 'DISPATCHED' && o.dispatch_status ? o.dispatch_status : o.order_status;
+      const deliveryLocation = o.preferred_location_desc || o.preferred_location_code || '';
+      const items = o.items && Array.isArray(o.items) ? o.items : [];
+
+      if (items.length > 0) {
+        items.forEach(item => {
+          data.push({
+            'Order Id': o.order_id,
+            'Dealer': o.dealer_name || o.dealer_company_name || '',
+            'Product': item.product_name || '',
+            'Status': realStatus,
+            'Order Date': fmt(o.order_date),
+            'Order Bags': item.order_bags || '',
+            'Order Qty': item.order_quantity || '',
+            'Dispatch Date': o.dispatch_created_at ? fmt(o.dispatch_created_at) : '',
+            'Dispatch Bags': item.order_dispatch_bags || '',
+            'Dispatch Qty': item.order_dispatch_quantity || '',
+            'Delivery Location': deliveryLocation,
+            'Vehicle No': o.dispatch_vehicle_number || o.vehicle_number_on_order || '',
+            'Driver Name': o.dispatch_driver_name || o.driver_name_on_order || '',
+            'Driver Phone': o.dispatch_driver_phone || o.driver_phone_on_order || '',
+            'Bilty No': o.bilty_number || '',
+            'Remarks': o.remarks || '',
+            'Party': o.party_company_name || o.party_name_col || '',
+            'Address': o.party_address || '',
+            'Load Type': o.load_type_desc || o.load_type_code || '',
+            'Preferred Location': o.preferred_location_desc || o.preferred_location_code || '',
+            'Actual Location': o.actual_location_desc || o.actual_loading_location_code || '',
+          });
+        });
+      } else {
+        data.push({
+          'Order Id': o.order_id,
+          'Dealer': o.dealer_name || o.dealer_company_name || '',
+          'Product': o.product_name || '',
+          'Status': realStatus,
+          'Order Date': fmt(o.order_date),
+          'Order Bags': '',
+          'Order Qty': o.order_quantity || '',
+          'Dispatch Date': o.dispatch_created_at ? fmt(o.dispatch_created_at) : '',
+          'Dispatch Bags': '',
+          'Dispatch Qty': '',
+          'Delivery Location': deliveryLocation,
+          'Vehicle No': o.dispatch_vehicle_number || o.vehicle_number_on_order || '',
+          'Driver Name': o.dispatch_driver_name || o.driver_name_on_order || '',
+          'Driver Phone': o.dispatch_driver_phone || o.driver_phone_on_order || '',
+          'Bilty No': o.bilty_number || '',
+          'Remarks': o.remarks || '',
+          'Party': o.party_company_name || o.party_name_col || '',
+          'Address': o.party_address || '',
+          'Load Type': o.load_type_desc || o.load_type_code || '',
+          'Preferred Location': o.preferred_location_desc || o.preferred_location_code || '',
+          'Actual Location': o.actual_location_desc || o.actual_loading_location_code || '',
+        });
+      }
+    });
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Dispatcher Orders');
@@ -1704,6 +2000,8 @@ function App() {
           loadingLocations={loadingLocs}
           onSubmit={handleDispatch}
           onClose={() => setDispatchModal(null)}
+          notify={notify}
+          onRefresh={fetchOrders}
         />
       )}
 
@@ -1743,7 +2041,7 @@ function App() {
           onView={order => {
             setViewOrder(order);
           }}
-          onCancel={handleCancel}
+          
         />
       )}
 
@@ -1851,7 +2149,7 @@ function App() {
             setDispatchModal(order);
             setSelectedTotalDealerId(null);
           }}
-          onCancel={handleCancel}
+          
         />
       )}
 
@@ -1993,7 +2291,7 @@ function App() {
             onAccept={handleAccept}
             onDispatch={order => setDispatchModal(order)}
             onView={order => setViewOrder(order)}
-            onCancel={handleCancel}
+            
             isOrderOverdue={isOrderOverdue}
           />
         ))

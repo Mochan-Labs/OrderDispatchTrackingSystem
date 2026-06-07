@@ -45,11 +45,14 @@ const IS_ADMIN_OR_OFFICE = window._IS_ADMIN_OR_OFFICE === 'true' || window._IS_A
 const IS_DISPATCHER = window._IS_DISPATCHER === 'true' || window._IS_DISPATCHER === true;
 
 const STATUS_CONFIG = {
-  ORDER_PLACED: { text: 'Order Placed', icon: '🕐', bg: '#fd7e14', tc: '#fff' },
-  ACCEPTED:     { text: 'Accepted',     icon: '✅', bg: '#0dcaf0', tc: '#000' },
-  DISPATCHED:   { text: 'Dispatched',   icon: '📦', bg: '#198754', tc: '#fff' },
-  ON_HOLD:      { text: 'On Hold',      icon: '⏸️', bg: '#e57373', tc: '#fff' },
-  CANCELLED:    { text: 'Cancelled',    icon: '❌', bg: '#6c757d', tc: '#fff' },
+  ORDER_PLACED:      { text: 'Order Placed',        icon: '🕐', bg: '#fd7e14', tc: '#fff' },
+  ACCEPTED:          { text: 'Accepted',            icon: '✅', bg: '#0dcaf0', tc: '#000' },
+  DISPATCHED:        { text: 'Dispatched',          icon: '📦', bg: '#198754', tc: '#fff' },
+  ON_HOLD:           { text: 'On Hold',             icon: '⏸️', bg: '#e57373', tc: '#fff' },
+  CANCELLED:         { text: 'Cancelled',           icon: '❌', bg: '#6c757d', tc: '#fff' },
+  dispatch_completed: { text: 'Fully Dispatched',   icon: '✅', bg: '#198754', tc: '#fff' },
+  dispatch_partial:  { text: 'Partially Dispatched', icon: '📦', bg: '#fd7e14', tc: '#fff' },
+  dispatch_onhold:   { text: 'Dispatch on Hold',    icon: '⏸️', bg: '#e57373', tc: '#fff' },
 };
 
 
@@ -66,6 +69,14 @@ function formatDateTime(value) {
     second: '2-digit',
     hour12: true,
   }).format(dt);
+}
+
+function getRealTimeStatus(order) {
+  // Show dispatch status if order is dispatched and dispatch_status exists, otherwise show order_status
+  if (order.order_status === 'DISPATCHED' && order.dispatch_status) {
+    return order.dispatch_status;
+  }
+  return order.order_status;
 }
 
 function StatusBadge({ status }) {
@@ -166,55 +177,46 @@ function DispatchModal({ order, onClose }) {
             {/* Order Info */}
             <h6 className="fw-bold text-muted mb-3 text-uppercase small">Order Information</h6>
             <div className="row g-3 mb-4">
-              {/* Row 1: Products & Quantities */}
-              {order.items && order.items.length > 0 ? (
-                <div className="col-12">
-                  <div className="p-3 bg-light rounded">
-                    <div className="text-muted small mb-2 fw-semibold">Products &amp; Quantities</div>
-                    <table className="table table-sm table-bordered mb-0" style={{ fontSize: '.88rem' }}>
-                      <thead className="table-light">
-                        <tr>
-                          <th>Product</th>
-                          <th style={{ width: 90 }}>Bags</th>
-                          <th style={{ width: 110 }}>Qty (MT)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {order.items.map((item, idx) => (
+              {/* Row 1: Products & Quantities — Always in table format */}
+              <div className="col-12">
+                <div className="p-3 bg-light rounded">
+                  <div className="text-muted small mb-2 fw-semibold">Products &amp; Quantities</div>
+                  <table className="table table-sm table-bordered mb-0" style={{ fontSize: '.88rem' }}>
+                    <thead className="table-light">
+                      <tr>
+                        <th>Product</th>
+                        <th style={{ width: 90 }}>Bags</th>
+                        <th style={{ width: 110 }}>Qty (MT)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {order.items && order.items.length > 0 ? (
+                        order.items.map((item, idx) => (
                           <tr key={idx}>
                             <td>{item.product_name || `Product #${item.product_id}`}</td>
                             <td>{item.order_bags || '—'}</td>
                             <td>{parseFloat(item.order_quantity).toFixed(3)}</td>
                           </tr>
-                        ))}
-                      </tbody>
-                      {order.items.length > 1 && (
-                        <tfoot>
-                          <tr className="table-secondary fw-bold">
-                            <td colSpan={2} className="text-muted small">Total</td>
-                            <td>{order.quantity.toFixed(3)}</td>
-                          </tr>
-                        </tfoot>
+                        ))
+                      ) : (
+                        <tr>
+                          <td>{order.product_name || '—'}</td>
+                          <td>—</td>
+                          <td>{order.quantity.toFixed(3)}</td>
+                        </tr>
                       )}
-                    </table>
-                  </div>
+                    </tbody>
+                    {order.items && order.items.length > 1 && (
+                      <tfoot>
+                        <tr className="table-secondary fw-bold">
+                          <td colSpan={2} className="text-muted small">Total</td>
+                          <td>{order.quantity.toFixed(3)}</td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
                 </div>
-              ) : (
-                <>
-                  <div className="col-md-6">
-                    <div className="p-3 bg-light rounded">
-                      <div className="text-muted small">Product</div>
-                      <div className="fw-semibold">{order.product_name || '—'}</div>
-                    </div>
-                  </div>
-                  <div className="col-md-6">
-                    <div className="p-3 bg-light rounded">
-                      <div className="text-muted small">Quantity</div>
-                      <div className="fw-semibold">{order.quantity} {order.unit}</div>
-                    </div>
-                  </div>
-                </>
-              )}
+              </div>
               {/* Row 2: Party Company Name + Party Phone + Party Address */}
               <div className="col-md-4">
                 <div className="p-3 bg-light rounded">
@@ -283,7 +285,7 @@ function DispatchModal({ order, onClose }) {
               <div className="col-md-6">
                 <div className="p-3 bg-light rounded">
                   <div className="text-muted small">Order Status</div>
-                  <div><StatusBadge status={order.order_status}/></div>
+                  <div><StatusBadge status={getRealTimeStatus(order)}/></div>
                 </div>
               </div>
               {order.remarks && (
@@ -1192,24 +1194,65 @@ function App() {
   };
 
   const exportExcel = () => {
-    const data = filtered.map(o => ({
-      'Order Id': o.order_id,
-      'Dealer': o.dealer_name || '',
-      'Product': o.product_name,
-      'Quantity': `${o.quantity} ${o.unit}`,
-      'Delivery Location': o.delivery_location,
-      'Order Date': formatDateTime(o.order_date),
-      'Status': o.order_status,
-      'Vehicle No': o.dispatch ? o.dispatch.vehicle_no : '',
-      'Driver Name': o.dispatch ? o.dispatch.driver_name : '',
-      'Driver Phone': o.dispatch ? o.dispatch.driver_phone : '',
-      'Bilty No': o.dispatch ? o.dispatch.bilty_number : '',
-      'Dispatch Date': o.dispatch ? o.dispatch.dispatch_date : '',
-      'Expected Delivery': o.dispatch ? o.dispatch.expected_delivery : '',
-      'Actual Delivery': o.dispatch ? (o.dispatch.actual_delivery || '') : '',
-      'Dispatch Status': o.dispatch ? o.dispatch.dispatch_status : '',
-      'Remarks': o.remarks || '',
-    }));
+    const data = [];
+    filtered.forEach(o => {
+      // Determine real-time status: use dispatch_status if dispatched, otherwise use order_status
+      const realStatus = o.order_status === 'DISPATCHED' && o.dispatch_status ? o.dispatch_status : o.order_status;
+
+      // If order has items, export each item as a separate row
+      if (o.items && o.items.length > 0) {
+        o.items.forEach(item => {
+          data.push({
+            'Order Id': o.order_id,
+            'Dealer': o.dealer_name || '',
+            'Product': item.product_name || '',
+            'Status': realStatus,
+            'Order Date': formatDateTime(o.order_date),
+            'Order Bags': item.order_bags || '',
+            'Order Qty': item.order_quantity || '',
+            'Dispatch Date': o.dispatch_created_at ? formatDateTime(o.dispatch_created_at) : '',
+            'Dispatch Bags': item.order_dispatch_bags || '',
+            'Dispatch Qty': item.order_dispatch_quantity || '',
+            'Delivery Location': o.delivery_location || '',
+            'Vehicle No': o.dispatch_vehicle_number || '',
+            'Driver Name': o.dispatch_driver_name || '',
+            'Driver Phone': o.dispatch_driver_phone || '',
+            'Bilty No': o.bilty_number || '',
+            'Remarks': o.remarks || '',
+            'Party': o.party_name || '',
+            'Address': o.party_address || '',
+            'Load Type': o.load_type_desc || '',
+            'Preferred Location': o.preferred_location_desc || '',
+            'Actual Location': o.actual_loading_location_code || '',
+          });
+        });
+      } else {
+        // Fallback for orders without items
+        data.push({
+          'Order Id': o.order_id,
+          'Dealer': o.dealer_name || '',
+          'Product': o.product_name || '',
+          'Status': realStatus,
+          'Order Date': formatDateTime(o.order_date),
+          'Order Bags': '',
+          'Order Qty': `${o.quantity} ${o.unit}`,
+          'Dispatch Date': o.dispatch_created_at ? formatDateTime(o.dispatch_created_at) : '',
+          'Dispatch Bags': '',
+          'Dispatch Qty': '',
+          'Delivery Location': o.delivery_location || '',
+          'Vehicle No': o.dispatch_vehicle_number || '',
+          'Driver Name': o.dispatch_driver_name || '',
+          'Driver Phone': o.dispatch_driver_phone || '',
+          'Bilty No': o.bilty_number || '',
+          'Remarks': o.remarks || '',
+          'Party': o.party_name || '',
+          'Address': o.party_address || '',
+          'Load Type': o.load_type_desc || '',
+          'Preferred Location': o.preferred_location_desc || '',
+          'Actual Location': o.actual_loading_location_code || '',
+        });
+      }
+    });
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, IS_ADMIN_OR_OFFICE ? 'All Orders' : 'My Orders');
@@ -1491,7 +1534,7 @@ function App() {
                       {visibleCols.orderDate && <td>{formatDateTime(o.order_date)}</td>}
                       {visibleCols.status && <td className="text-center">
                         <div>
-                          <StatusBadge status={o.order_status} />
+                          <StatusBadge status={getRealTimeStatus(o)} />
                           {o.order_status === 'ON_HOLD' && o.on_hold_reason && (
                             <div className="text-muted small mt-2" style={{ fontSize: '0.75rem', maxWidth: 150, margin: '0 auto' }}>
                               💬 {o.on_hold_reason}
