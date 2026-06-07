@@ -2,7 +2,7 @@
 
 <script>
   const isEditMode = <%= editOrderId ? 'true' : 'false' %>;
-  const editOrderId = <%= editOrderId ? editOrderId : 'null' %>;
+  const editOrderId = <% if (editOrderId) { %><%= parseInt(editOrderId) %><% } else { %>null<% } %>;
 </script>
 
 <nav aria-label="breadcrumb" class="mb-3">

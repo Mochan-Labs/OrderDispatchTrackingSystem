@@ -331,7 +331,7 @@ router.get('/orders', ensureDealer, (req, res) => {
   const isDispatcher = role === 'DISPATCHER';
   console.log(`[/orders] User: ${req.session.user.username}, Role: '${role}', isDispatcher: ${isDispatcher}, isAdmin: ${isAdmin}`);
   if (!isAdmin && req.query.action === 'new') {
-    return res.render('orders/new', { user: req.session.user });
+    return res.render('orders/new', { user: req.session.user, editOrderId: null });
   }
   if (!isAdmin && req.query.action === 'edit' && req.query.id) {
     return res.render('orders/new', { user: req.session.user, editOrderId: req.query.id });
