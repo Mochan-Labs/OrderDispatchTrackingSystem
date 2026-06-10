@@ -16,6 +16,8 @@
 const { useState, useEffect } = React;
 const EMPTY = { dealer_code:'', party_code:'', party_company_name:'', party_name:'', party_address:'', party_phone:'', party_email:'', party_is_active_flag:true };
 
+const validatePhone=(val)=>val.replace(/[^0-9]/g,'').slice(0,10);
+
 function Toast({msg,type,onClose}){
   if(!msg) return null;
   return <div className={`alert alert-${type} alert-dismissible`}>{msg}<button className="btn-close ms-2" onClick={onClose}></button></div>;
@@ -201,8 +203,8 @@ function App(){
                   </select>
                 </div>
                 <div className="col-md-6">
-                  <label className="form-label fw-semibold">Phone</label>
-                  <input className="form-control" value={form.party_phone} onChange={e=>setForm({...form,party_phone:e.target.value})} maxLength="10"/>
+                  <label className="form-label fw-semibold">Phone <span className="text-muted fw-normal small">(10 digits only)</span></label>
+                  <input className="form-control" type="tel" value={form.party_phone} onChange={e=>setForm({...form,party_phone:validatePhone(e.target.value)})} pattern="[0-9]{10}" placeholder="10-digit number"/>
                 </div>
                 <div className="col-md-6">
                   <label className="form-label fw-semibold">Email</label>

@@ -14,8 +14,8 @@
       <div class="card-body">
         <form id="trackForm" class="d-grid gap-3">
           <div>
-            <label class="form-label fw-semibold">Driver Mobile Number <span class="text-danger">*</span></label>
-            <input id="driverPhone" class="form-control" placeholder="e.g. 9123456780" value="<%= defaultDriverPhone %>" required />
+            <label class="form-label fw-semibold">Driver Mobile Number <span class="text-danger">*</span> <span class="text-muted fw-normal small">(10 digits only)</span></label>
+            <input id="driverPhone" type="tel" class="form-control" placeholder="10-digit number" value="<%= defaultDriverPhone %>" maxlength="10" pattern="[0-9]{10}" required />
           </div>
           <div>
             <label class="form-label fw-semibold">Order ID (optional)</label>
@@ -32,7 +32,7 @@
         <p class="text-muted small mb-2">Generate a link the driver opens on their phone to start sharing GPS.</p>
         <div class="input-group input-group-sm mb-2">
           <span class="input-group-text">Mobile</span>
-          <input id="shareMobile" class="form-control" placeholder="Driver mobile number"/>
+          <input id="shareMobile" type="tel" class="form-control" placeholder="10-digit number" maxlength="10" pattern="[0-9]{10}"/>
         </div>
         <div class="input-group input-group-sm mb-2">
           <span class="input-group-text">Order</span>
@@ -284,6 +284,14 @@
       showStatus('Firebase listener error. Check database rules and config.', 'danger');
     });
   }
+
+  // ── Phone validation (10 digits only) ─────────────────────────────────
+  document.getElementById('driverPhone').addEventListener('input', function(e) {
+    e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
+  });
+  document.getElementById('shareMobile').addEventListener('input', function(e) {
+    e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
+  });
 
   function generateDriverLink() {
     const mobile = document.getElementById('shareMobile').value.trim();

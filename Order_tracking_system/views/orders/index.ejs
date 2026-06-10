@@ -55,6 +55,8 @@ const STATUS_CONFIG = {
   dispatch_onhold:   { text: 'Dispatch on Hold',    icon: '⏸️', bg: '#e57373', tc: '#fff' },
 };
 
+const validatePhone=(val)=>val.replace(/[^0-9]/g,'').slice(0,10);
+
 
 function formatDateTime(value) {
   if (!value) return '—';
@@ -510,7 +512,7 @@ function CreateForDealerModal({ onClose, onSaved, repeatFrom }) {
           setPartyId(String(repeatFrom.party_id));
           const found = p.find(x => x.party_id === repeatFrom.party_id);
           if (found) {
-            setContactNumber(found.party_phone || '');
+            setContactNumber(validatePhone(found.party_phone || ''));
             setDeliveryAddress(found.party_address || '');
           }
         }
@@ -525,7 +527,7 @@ function CreateForDealerModal({ onClose, onSaved, repeatFrom }) {
     setPrefLocation(repeatFrom.preferred_location_code || '');
     if (repeatFrom.load_type_code === 'SLF_DOT') {
       setDriverName(repeatFrom.driver_name_on_order || '');
-      setDriverPhone(repeatFrom.driver_phone_on_order || '');
+      setDriverPhone(validatePhone(repeatFrom.driver_phone_on_order || ''));
       setVehicleNumber(repeatFrom.vehicle_number_on_order || '');
     }
   }, [repeatFrom, dealers]);
@@ -561,7 +563,7 @@ function CreateForDealerModal({ onClose, onSaved, repeatFrom }) {
     setPartyId(pId);
     const selected = parties.find(p => String(p.party_id) === pId);
     if (selected) {
-      setContactNumber(selected.party_phone || '');
+      setContactNumber(validatePhone(selected.party_phone || ''));
       setDeliveryAddress(selected.party_address || '');
     } else {
       setContactNumber('');
@@ -748,13 +750,15 @@ function CreateForDealerModal({ onClose, onSaved, repeatFrom }) {
 
               {/* Contact Number */}
               <div className="mb-3">
-                <label className="form-label fw-semibold">Contact Number</label>
+                <label className="form-label fw-semibold">Contact Number <span className="text-muted fw-normal small">(10 digits only)</span></label>
                 <input
-                  type="text"
+                  type="tel"
                   className="form-control"
                   value={contactNumber}
-                  onChange={(e) => setContactNumber(e.target.value)}
-                  placeholder="Auto-filled or enter manually"
+                  onChange={(e) => setContactNumber(validatePhone(e.target.value))}
+                  placeholder="10-digit number"
+                  maxLength="10"
+                  pattern="[0-9]{10}"
                 />
               </div>
 
@@ -816,9 +820,9 @@ function CreateForDealerModal({ onClose, onSaved, repeatFrom }) {
                         value={driverName} onChange={e => setDriverName(e.target.value)} />
                     </div>
                     <div className="col-md-4">
-                      <label className="form-label fw-semibold small">Driver Phone</label>
-                      <input type="tel" className="form-control" placeholder="e.g. 9876543210"
-                        value={driverPhone} onChange={e => setDriverPhone(e.target.value)} />
+                      <label className="form-label fw-semibold small">Driver Phone <span className="text-muted fw-normal">(10 digits only)</span></label>
+                      <input type="tel" className="form-control" placeholder="10-digit number"
+                        value={driverPhone} onChange={e => setDriverPhone(validatePhone(e.target.value))} maxLength="10" pattern="[0-9]{10}" />
                     </div>
                     <div className="col-md-4">
                       <label className="form-label fw-semibold small">Vehicle Number</label>
@@ -1093,6 +1097,24 @@ function App() {
     connect();
     return () => { esRef.current?.close(); clearTimeout(retryRef.current); };
   }, []);
+
+  // ── Load repeat order from URL parameter ────────────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const repeatId = params.get('repeat');
+    if (repeatId && orders.length > 0) {
+      const foundOrder = orders.find(o => o.order_id == repeatId);
+      if (foundOrder) {
+        // Validate phone numbers in the order data before setting
+        const validatedOrder = {
+          ...foundOrder,
+          party_phone: validatePhone(foundOrder.party_phone || ''),
+          driver_phone_on_order: validatePhone(foundOrder.driver_phone_on_order || ''),
+        };
+        setRepeatOrder(validatedOrder);
+      }
+    }
+  }, [orders]);
 
   const applyDateFilter = () => {
     if (startDate && endDate && startDate > endDate) {

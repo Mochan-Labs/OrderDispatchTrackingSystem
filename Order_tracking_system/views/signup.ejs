@@ -67,8 +67,8 @@
                 <input id="user_name" name="user_name" class="form-control" value="<%= formData && formData.user_name ? formData.user_name : '' %>" disabled />
               </div>
               <div class="col-md-6">
-                <label class="form-label">Phone (optional)</label>
-                <input id="user_phone" name="user_phone" class="form-control" maxlength="10" value="<%= formData && formData.user_phone ? formData.user_phone : '' %>" disabled />
+                <label class="form-label">Phone <span class="text-muted fw-normal small">(10 digits only)</span></label>
+                <input id="user_phone" name="user_phone" type="tel" class="form-control" maxlength="10" pattern="[0-9]{10}" value="<%= formData && formData.user_phone ? formData.user_phone : '' %>" disabled />
               </div>
               <div class="col-md-6">
                 <label class="form-label">Email (optional)</label>

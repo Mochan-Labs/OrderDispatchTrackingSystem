@@ -18,6 +18,8 @@ const { useState, useEffect } = React;
 const EMPTY_DEALER = { dealer_name:'', dealer_company_name:'', dealer_code:'', dealer_phone:'', dealer_email:'', dealer_daily_limit:'', dealer_monthly_target:'', dealer_is_active_flag:true };
 const EMPTY_PARTY  = { party_code:'', party_name:'', party_company_name:'', party_phone:'', party_email:'', party_address:'', party_is_active_flag:true, dealer_id:'' };
 
+const validatePhone=(val)=>val.replace(/[^0-9]/g,'').slice(0,10);
+
 function Toast({msg,type,onClose}){
   if(!msg) return null;
   return <div className={`alert alert-${type} alert-dismissible`}>{msg}<button className="btn-close ms-2" onClick={onClose}></button></div>;
@@ -99,8 +101,8 @@ function PartyModal({dealer, onClose, notify}){
                         <input className="form-control form-control-sm" value={form.party_name} onChange={e=>setForm({...form,party_name:e.target.value})}/>
                       </div>
                       <div className="col-md-4">
-                        <label className="form-label fw-semibold">Phone <span className="text-muted fw-normal small">(Optional)</span></label>
-                        <input className="form-control form-control-sm" value={form.party_phone} onChange={e=>setForm({...form,party_phone:e.target.value})} maxLength="10"/>
+                        <label className="form-label fw-semibold">Phone <span className="text-muted fw-normal small">(10 digits only)</span></label>
+                        <input className="form-control form-control-sm" type="tel" placeholder="10-digit number" value={form.party_phone} onChange={e=>setForm({...form,party_phone:validatePhone(e.target.value)})} pattern="[0-9]{10}"/>
                       </div>
                       <div className="col-md-4">
                         <label className="form-label fw-semibold">Email <span className="text-muted fw-normal small">(Optional)</span></label>
@@ -375,8 +377,8 @@ function App(){
                 <input className="form-control" value={form.dealer_name} onChange={e=>setForm({...form,dealer_name:e.target.value})} required/></div>
               <div className="col-md-6"><label className="form-label fw-semibold">Dealer Company Name <span className="text-danger">*</span></label>
                 <input className="form-control" value={form.dealer_company_name} onChange={e=>setForm({...form,dealer_company_name:e.target.value})} required/></div>
-              <div className="col-md-6"><label className="form-label fw-semibold">Phone <span className="text-muted fw-normal small">(Optional)</span></label>
-                <input className="form-control" value={form.dealer_phone} onChange={e=>setForm({...form,dealer_phone:e.target.value})} maxLength="10"/></div>
+              <div className="col-md-6"><label className="form-label fw-semibold">Phone <span className="text-muted fw-normal small">(10 digits only)</span></label>
+                <input className="form-control" type="tel" placeholder="10-digit number" value={form.dealer_phone} onChange={e=>setForm({...form,dealer_phone:validatePhone(e.target.value)})} pattern="[0-9]{10}"/></div>
               <div className="col-md-6"><label className="form-label fw-semibold">Email <span className="text-muted fw-normal small">(Optional)</span></label>
                 <input className="form-control" type="email" value={form.dealer_email} onChange={e=>setForm({...form,dealer_email:e.target.value})}/></div>
               <div className="col-md-6"><label className="form-label fw-semibold">Daily Limit <span className="text-danger">*</span></label>

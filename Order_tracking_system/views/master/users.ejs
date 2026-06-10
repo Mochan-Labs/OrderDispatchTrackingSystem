@@ -17,6 +17,8 @@
 const { useState, useEffect } = React;
 const EMPTY = { user_name:'', dealer_company_name:'', user_login_name:'', user_email:'', user_phone:'', role_id:'', password:'', user_is_active_flag:true, user_is_locked_flag:false };
 
+const validatePhone=(val)=>val.replace(/[^0-9]/g,'').slice(0,10);
+
 function Toast({msg,type,onClose}){
   if(!msg) return null;
   return <div className={`alert alert-${type} alert-dismissible`}>{msg}<button className="btn-close ms-2" onClick={onClose}></button></div>;
@@ -147,8 +149,8 @@ function App(){
                 <input className="form-control" value={form.dealer_company_name||''} disabled /></div>}
               <div className="col-md-6"><label className="form-label fw-semibold">Email <span className="text-muted">(optional)</span></label>
                 <input className="form-control" type="email" value={form.user_email} onChange={e=>setForm({...form,user_email:e.target.value})}/></div>
-              <div className="col-md-6"><label className="form-label fw-semibold">Phone <span className="text-muted">(optional)</span></label>
-                <input className="form-control" value={form.user_phone} onChange={e=>setForm({...form,user_phone:e.target.value})} maxLength="10"/></div>
+              <div className="col-md-6"><label className="form-label fw-semibold">Phone <span className="text-muted fw-normal small">(10 digits only, optional)</span></label>
+                <input className="form-control" type="tel" value={form.user_phone} onChange={e=>setForm({...form,user_phone:validatePhone(e.target.value)})} pattern="[0-9]{10}" placeholder="10-digit number"/></div>
               <div className="col-md-3 d-flex align-items-end"><div className="form-check form-switch">
                 <input className="form-check-input" type="checkbox" id="userActive" checked={form.user_is_active_flag} onChange={e=>setForm({...form,user_is_active_flag:e.target.checked})}/>
                 <label className="form-check-label" htmlFor="userActive">Active</label>

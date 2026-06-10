@@ -45,6 +45,8 @@ const STATUS_CONFIG = {
   dispatch_onhold:    { text: 'Dispatch on Hold',       icon: '⏸️', bg: '#e57373', tc: '#fff' },
 };
 
+const validatePhone=(val)=>val.replace(/[^0-9]/g,'').slice(0,10);
+
 function fmt(value) {
   if (!value) return '—';
   const dt = new Date(value);
@@ -625,13 +627,14 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
                     />
                   </div>
                   <div className="col-md-6">
-                    <label className="form-label fw-semibold">Driver Phone</label>
+                    <label className="form-label fw-semibold">Driver Phone <span className="text-muted fw-normal small">(10 digits only)</span></label>
                     <input
-                      type="text"
+                      type="tel"
                       className="form-control"
-                      maxLength="10"
+                      placeholder="10-digit number"
                       value={form.driver_phone || order.dispatch_driver_phone || ''}
-                      onChange={(e) => setForm(f => ({ ...f, driver_phone: e.target.value.replace(/\D/g, '') }))}
+                      onChange={(e) => setForm(f => ({ ...f, driver_phone: validatePhone(e.target.value) }))}
+                      pattern="[0-9]{10}"
                     />
                   </div>
                   <div className="col-md-6">
@@ -702,14 +705,15 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
                   </div>
                   <div className="col-md-6">
                     <label className="form-label fw-semibold">
-                      Driver Phone <span className="text-danger">*</span>
+                      Driver Phone <span className="text-danger">*</span> <span className="text-muted fw-normal small">(10 digits only)</span>
                     </label>
                     <input
+                      type="tel"
                       className="form-control"
                       placeholder="10-digit mobile number"
-                      maxLength={10}
                       value={form.driver_phone}
-                      onChange={e => set('driver_phone', e.target.value.replace(/\D/g, ''))}
+                      onChange={e => set('driver_phone', validatePhone(e.target.value))}
+                      pattern="[0-9]{10}"
                     />
                   </div>
                   <div className="col-12">
