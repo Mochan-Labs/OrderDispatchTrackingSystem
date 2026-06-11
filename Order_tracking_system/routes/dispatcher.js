@@ -2,6 +2,33 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { generatePresignedUploadUrl, generatePresignedReadUrl } = require('../services/s3Service');
+const path = require('path');
+const fs = require('fs');
+
+// Helper: Generate local upload URL for development
+function generateLocalUploadUrl(dealerId, orderId, fileName) {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const timestamp = Math.floor(now.getTime() / 1000);
+  const ext = fileName.split('.').pop() || 'jpg';
+
+  const dir = `receipts/${year}/${month}/${day}/${dealerId}`;
+  const filename = `O${orderId}_${timestamp}.${ext}`;
+  const uploadDir = path.join(process.cwd(), 'public/uploads', dir);
+
+  // Create directory if it doesn't exist
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+
+  return {
+    uploadUrl: `/api/dispatcher/upload-local`,
+    filePath: path.join(dir, filename),
+    uploadPath: path.join(uploadDir, filename)
+  };
+}
 const { broadcastOrderUpdate } = require('../services/sseService');
 
 function ensureDispatcher(req, res, next) {
@@ -17,11 +44,18 @@ function ensureDispatcher(req, res, next) {
   return next();
 }
 
-// Generate presigned URLs for receipt images
+// Generate presigned URLs for receipt images (or use local paths for development)
 async function addPresignedUrlsToDispatcherOrders(orders) {
   try {
     for (const order of orders) {
       if (order.image_url && !order.image_url.includes('?')) {
+        // For local storage, image_url is already a valid local path
+        if (process.env.STORAGE_MODE === 'local') {
+          console.log(`[Dispatcher] Using local image path: ${order.image_url}`);
+          continue;
+        }
+
+        // For S3 storage, generate presigned URL
         const receiptIndex = order.image_url.indexOf('/receipts/');
         let s3Key = null;
         if (receiptIndex !== -1) {
@@ -105,6 +139,11 @@ router.get('/api/dispatcher/orders', ensureDispatcher, async (req, res) => {
         al.code_desc  AS actual_location_desc,
         od.dispatch_status,
         od.created_at AS dispatch_created_at,
+        od.image_url,
+        od.image_type,
+        od.image_original_size,
+        od.image_compressed_size,
+        od.image_uploaded_at,
         (SELECT COALESCE(json_agg(json_build_object(
             'item_id',       oi.item_id,
             'product_id',    oi.product_id,
@@ -174,12 +213,73 @@ router.post('/api/dispatcher/presigned-url', ensureDispatcher, async (req, res) 
     }
 
     console.log(`[Dispatcher] Presigned URL request: order=${order_id}, dealer=${dealer_id}, file=${file_name}, type=${file_type}`);
+
+    // Check storage mode - use local storage for development
+    if (process.env.STORAGE_MODE === 'local') {
+      const localUrl = generateLocalUploadUrl(dealer_id, order_id, file_name);
+      return res.json({
+        url: localUrl.uploadUrl,
+        s3Key: localUrl.filePath,
+        isLocal: true
+      });
+    }
+
     const presignedUrl = await generatePresignedUploadUrl(dealer_id, order_id, file_name, file_type);
     res.json(presignedUrl);
   } catch (error) {
     console.error('[Dispatcher] presigned URL error:', error);
     console.error('[Dispatcher] Error details:', error.message, error.code);
     res.status(500).json({ error: `Failed to generate upload URL: ${error.message}` });
+  }
+});
+
+// POST local file upload handler (for local development only)
+router.post('/api/dispatcher/upload-local', ensureDispatcher, async (req, res) => {
+  try {
+    const { filePath, fileData, order_id, dealer_id } = req.body;
+
+    if (!filePath || !fileData) {
+      return res.status(400).json({ error: 'Missing filePath or fileData' });
+    }
+
+    const uploadDir = path.join(process.cwd(), 'public/uploads');
+    const fullPath = path.join(uploadDir, filePath);
+
+    // Security: ensure path is within uploads directory
+    if (!fullPath.startsWith(uploadDir)) {
+      return res.status(400).json({ error: 'Invalid file path' });
+    }
+
+    // Create directory if needed
+    const dir = path.dirname(fullPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    // Handle base64 or direct binary data
+    let buffer;
+    if (typeof fileData === 'string') {
+      // Base64 encoded
+      const base64Data = fileData.includes(',') ? fileData.split(',')[1] : fileData;
+      buffer = Buffer.from(base64Data, 'base64');
+    } else {
+      buffer = Buffer.from(fileData);
+    }
+
+    fs.writeFileSync(fullPath, buffer);
+
+    const localPath = `/uploads/${filePath}`;
+    console.log(`[Dispatcher] File saved locally: ${localPath} (order=${order_id}, dealer=${dealer_id})`);
+
+    res.json({
+      success: true,
+      image_url: localPath,
+      ETag: Buffer.from(localPath).toString('base64').substring(0, 16),
+      VersionId: null
+    });
+  } catch (error) {
+    console.error('[Dispatcher] Local upload error:', error);
+    res.status(500).json({ error: `Upload failed: ${error.message}` });
   }
 });
 
@@ -387,13 +487,13 @@ router.patch('/api/dispatcher/orders/:id/dispatch-quantities', ensureDispatcher,
   }
 });
 
-// PATCH /api/dispatcher/orders/:id/dispatch — update dispatch details (vehicle, driver, bilty, location)
+// PATCH /api/dispatcher/orders/:id/dispatch — update dispatch details (vehicle, driver, bilty, location, receipt)
 router.patch('/api/dispatcher/orders/:id/dispatch', ensureDispatcher, async (req, res) => {
   try {
     const orderId = parseInt(req.params.id);
-    const { vehicle_number, driver_name, driver_phone, bilty_number, actual_loading_location_code } = req.body;
+    const { vehicle_number, driver_name, driver_phone, bilty_number, actual_loading_location_code, image_url, image_type, image_original_size, image_compressed_size } = req.body;
 
-    console.log('[Dispatcher] Updating dispatch for order:', orderId, { vehicle_number, driver_name, driver_phone, bilty_number, actual_loading_location_code });
+    console.log('[Dispatcher] Updating dispatch for order:', orderId, { vehicle_number, driver_name, driver_phone, bilty_number, actual_loading_location_code, image_url: image_url ? 'provided' : 'none' });
 
     // Check if dispatch record exists
     const existing = await pool.query(
@@ -429,6 +529,23 @@ router.patch('/api/dispatcher/orders/:id/dispatch', ensureDispatcher, async (req
     if (actual_loading_location_code) {
       updates.push(`actual_loading_location_code = $${paramIndex++}`);
       values.push(actual_loading_location_code.trim());
+    }
+    if (image_url) {
+      updates.push(`image_url = $${paramIndex++}`);
+      values.push(image_url);
+      if (image_type) {
+        updates.push(`image_type = $${paramIndex++}`);
+        values.push(image_type);
+      }
+      if (image_original_size) {
+        updates.push(`image_original_size = $${paramIndex++}`);
+        values.push(image_original_size);
+      }
+      if (image_compressed_size) {
+        updates.push(`image_compressed_size = $${paramIndex++}`);
+        values.push(image_compressed_size);
+      }
+      updates.push(`image_uploaded_at = NOW()`);
     }
 
     updates.push(`updated_by = $${paramIndex++}`);

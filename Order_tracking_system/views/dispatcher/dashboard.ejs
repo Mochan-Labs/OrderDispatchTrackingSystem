@@ -206,29 +206,64 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
         throw new Error(errorData.error || `Failed to get presigned URL: ${presignedRes.status}`);
       }
 
-      const { url: presignedUrl, s3Key } = await presignedRes.json();
-      console.log('Presigned URL received:', s3Key);
+      const { url: presignedUrl, s3Key, isLocal } = await presignedRes.json();
+      console.log('Presigned URL received:', s3Key, 'isLocal:', isLocal);
       setUploadProgress(40);
 
-      // Step 2: Upload file directly to S3 using presigned URL
-      console.log('Uploading file directly to S3...');
-      const s3UploadRes = await fetch(presignedUrl, {
-        method: 'PUT',
-        body: fileToUpload,
-        headers: { 'Content-Type': fileToUpload.type },
-      });
+      let s3Url;
 
-      if (!s3UploadRes.ok) {
-        throw new Error(`S3 upload failed: ${s3UploadRes.status} ${s3UploadRes.statusText}`);
+      if (isLocal) {
+        // Local upload: POST to the upload endpoint
+        console.log('Uploading file to local endpoint...');
+
+        // Convert file to base64 using FileReader
+        const fileBase64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const dataUrl = reader.result;
+            const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+            resolve(base64);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(fileToUpload);
+        });
+
+        const localUploadRes = await fetch(presignedUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filePath: s3Key,
+            fileData: fileBase64,
+            order_id: order.order_id,
+            dealer_id: order.dealer_id
+          })
+        });
+
+        if (!localUploadRes.ok) {
+          throw new Error(`Local upload failed: ${localUploadRes.status} ${localUploadRes.statusText}`);
+        }
+
+        const localResult = await localUploadRes.json();
+        s3Url = localResult.image_url;
+        console.log('Receipt uploaded locally:', s3Url);
+      } else {
+        // S3 upload: PUT file directly to presigned URL
+        console.log('Uploading file directly to S3...');
+        const s3UploadRes = await fetch(presignedUrl, {
+          method: 'PUT',
+          body: fileToUpload,
+          headers: { 'Content-Type': fileToUpload.type },
+        });
+
+        if (!s3UploadRes.ok) {
+          throw new Error(`S3 upload failed: ${s3UploadRes.status} ${s3UploadRes.statusText}`);
+        }
+
+        s3Url = presignedUrl.split('?')[0]; // Remove query params from presigned URL
+        console.log('Receipt uploaded to S3:', s3Url);
       }
 
       setUploadProgress(80);
-
-      // Step 3: Construct S3 URL from s3Key
-      // Extract bucket and region from presignedUrl
-      const s3Url = presignedUrl.split('?')[0]; // Remove query params from presigned URL
-      console.log('Receipt uploaded to S3:', s3Url);
-
       setUploadProgress(95);
 
       // Store metadata
@@ -283,17 +318,27 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
 
         console.log('[Edit Dispatch] Sending to backend:', JSON.stringify(dispatchQuantities, null, 2));
 
-        // Update dispatch record with new details
+        // Update dispatch record with new details (including new receipt if uploaded)
+        const updatePayload = {
+          vehicle_number: form.vehicle_number || order.dispatch_vehicle_number,
+          driver_name: form.driver_name || order.dispatch_driver_name,
+          driver_phone: form.driver_phone || order.dispatch_driver_phone,
+          bilty_number: form.bilty_number || order.bilty_number,
+          actual_loading_location_code: form.actual_loading_location_code || order.actual_loading_location_code
+        };
+
+        // Include new receipt metadata if one was uploaded
+        if (imageMetadata) {
+          updatePayload.image_url = imageMetadata.image_url;
+          updatePayload.image_type = imageMetadata.image_type;
+          updatePayload.image_original_size = imageMetadata.image_original_size;
+          updatePayload.image_compressed_size = imageMetadata.image_compressed_size;
+        }
+
         const dispatchUpdateRes = await fetch(`/api/dispatcher/orders/${order.order_id}/dispatch`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            vehicle_number: form.vehicle_number || order.dispatch_vehicle_number,
-            driver_name: form.driver_name || order.dispatch_driver_name,
-            driver_phone: form.driver_phone || order.dispatch_driver_phone,
-            bilty_number: form.bilty_number || order.bilty_number,
-            actual_loading_location_code: form.actual_loading_location_code || order.actual_loading_location_code
-          })
+          body: JSON.stringify(updatePayload)
         });
 
         if (!dispatchUpdateRes.ok) {
@@ -569,8 +614,24 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
                     )}
                   </>
                 ) : (
-                  <div className="alert alert-success py-2 mb-0">
-                    ✅ Receipt uploaded successfully
+                  <div>
+                    <div className="alert alert-success py-2 mb-3">
+                      ✅ Receipt uploaded successfully
+                    </div>
+                    {uploadedImageUrl && (
+                      <div className="mb-3">
+                        <img
+                          src={uploadedImageUrl}
+                          alt="Receipt preview"
+                          style={{
+                            maxWidth: '100%',
+                            maxHeight: '300px',
+                            borderRadius: '8px',
+                            border: '1px solid #dee2e6'
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -740,16 +801,113 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
 
             {/* Comments section - only show in edit mode */}
             {isExistingDispatch && (
-              <div className="mb-4 p-3 border rounded" style={{ background: '#f9f9f9', borderColor: '#ddd' }}>
-                <h6 className="fw-bold text-muted text-uppercase small mb-3">📝 Dispatch Comments (Optional)</h6>
-                <textarea
-                  className="form-control"
-                  placeholder="Add any comments about this dispatch (e.g., partial dispatch reason, customer notes, etc.)"
-                  rows="3"
-                  value={form.dispatch_comments || ''}
-                  onChange={(e) => setForm(f => ({ ...f, dispatch_comments: e.target.value }))}
+              <>
+                <div className="mb-4 p-3 border rounded" style={{ background: '#f9f9f9', borderColor: '#ddd' }}>
+                  <h6 className="fw-bold text-muted text-uppercase small mb-3">📝 Dispatch Comments (Optional)</h6>
+                  <textarea
+                    className="form-control"
+                    placeholder="Add any comments about this dispatch (e.g., partial dispatch reason, customer notes, etc.)"
+                    rows="3"
+                    value={form.dispatch_comments || ''}
+                    onChange={(e) => setForm(f => ({ ...f, dispatch_comments: e.target.value }))}
+                  />
+                </div>
+
+                {/* Receipt display section for edit mode */}
+                <div className="mb-4 p-3 border rounded" style={{ background: '#f9f9f9', borderColor: '#ddd' }}>
+                <h6 className="fw-bold text-muted text-uppercase small mb-3">📸 Receipt Photo</h6>
+                {order.image_url ? (
+                  <>
+                    <img
+                      src={order.image_url}
+                      alt="Current dispatch receipt"
+                      style={{
+                        maxWidth: '100%',
+                        maxHeight: '250px',
+                        borderRadius: '8px',
+                        border: '1px solid #dee2e6',
+                        marginBottom: '12px',
+                        cursor: 'pointer'
+                      }}
+                      onClick={() => window.open(order.image_url, '_blank')}
+                    />
+                    <div className="text-muted small mb-3">
+                      Current Receipt {order.image_uploaded_at ? ` — Uploaded: ${fmt(order.image_uploaded_at)}` : ''}
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary"
+                      onClick={() => document.getElementById('receiptFileInputEdit').click()}
+                      disabled={uploading}
+                    >
+                      Replace Receipt
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-muted mb-3">No receipt uploaded for this dispatch</div>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary"
+                      onClick={() => document.getElementById('receiptFileInputEdit').click()}
+                      disabled={uploading}
+                    >
+                      Upload Receipt
+                    </button>
+                  </>
+                )}
+                <input
+                  type="file"
+                  id="receiptFileInputEdit"
+                  accept="image/*"
+                  onChange={handleFileSelect}
+                  style={{ display: 'none' }}
+                  disabled={uploading}
                 />
+                {selectedFile && !uploadedImageUrl && (
+                  <div className="mt-3">
+                    <div className="text-muted small mb-2">Selected: {selectedFile.name}</div>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-primary"
+                      onClick={uploadReceipt}
+                      disabled={uploading}
+                    >
+                      {uploading ? `Uploading ${uploadProgress}%...` : 'Upload Selected Receipt'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary ms-2"
+                      onClick={() => {
+                        setSelectedFile(null);
+                        setImagePreview(null);
+                        setErr('');
+                      }}
+                      disabled={uploading}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+                {uploadedImageUrl && (
+                  <div className="mt-3">
+                    <div className="alert alert-success py-2 mb-3">
+                      ✅ New receipt selected
+                    </div>
+                    <img
+                      src={uploadedImageUrl}
+                      alt="New receipt preview"
+                      style={{
+                        maxWidth: '100%',
+                        maxHeight: '200px',
+                        borderRadius: '8px',
+                        border: '1px solid #dee2e6'
+                      }}
+                    />
+                  </div>
+                )}
               </div>
+              </>
             )}
           </div>
 
@@ -971,6 +1129,30 @@ function ViewOrderModal({ order, onClose, onBack }) {
                   </div>
                 </div>
               </>
+            )}
+
+            {/* Receipt display section */}
+            {order.image_url && (
+              <div className="mb-4 p-3 border rounded" style={{ background: '#f0f8ff', borderColor: '#b0d4f1' }}>
+                <h6 className="fw-bold text-primary text-uppercase small mb-3">📸 Receipt Photo</h6>
+                <img
+                  src={order.image_url}
+                  alt="Dispatch receipt"
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '300px',
+                    borderRadius: '8px',
+                    border: '1px solid #dee2e6',
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => window.open(order.image_url, '_blank')}
+                />
+                {order.image_uploaded_at && (
+                  <div className="text-muted small mt-2">
+                    Uploaded: {fmt(order.image_uploaded_at)}
+                  </div>
+                )}
+              </div>
             )}
           </div>
           <div className="modal-footer">
