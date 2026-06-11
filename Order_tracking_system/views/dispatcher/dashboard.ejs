@@ -105,17 +105,17 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
   // Add dispatch quantities and comments for each item
   if (items && items.length > 0) {
     items.forEach((item, idx) => {
-      // Use order_dispatch_bags if it exists (even if 0), otherwise use order_bags
-      const dispatchBags = item.order_dispatch_bags !== undefined ? item.order_dispatch_bags : item.order_bags || 0;
+      // Use order_dispatch_bags if it exists (not null/undefined), otherwise use order_bags
+      const dispatchBags = (item.order_dispatch_bags ?? item.order_bags) || 0;
       initialForm[`dispatch_bags_${idx}`] = dispatchBags;
       const qtyPerBag = parseFloat(item.order_quantity || 0) / parseInt(item.order_bags || 1);
-      const dispatchQty = item.order_dispatch_quantity !== undefined ? item.order_dispatch_quantity : (dispatchBags * qtyPerBag).toFixed(3);
+      const dispatchQty = (item.order_dispatch_quantity ?? (dispatchBags * qtyPerBag).toFixed(3)) || 0;
       initialForm[`dispatch_quantity_${idx}`] = dispatchQty;
       initialForm[`dispatch_comments_${idx}`] = item.order_dispatch_comments || '';
     });
   } else {
     // Single item fallback
-    const dispatchBags = order.order_dispatch_bags !== undefined ? order.order_dispatch_bags : order.bags || 0;
+    const dispatchBags = (order.order_dispatch_bags ?? order.bags) || 0;
     initialForm['dispatch_bags'] = dispatchBags;
     const qtyPerBag = parseFloat(order.order_quantity || order.quantity || 0) / parseInt(order.bags || 1);
     initialForm['dispatch_quantity'] = (dispatchBags * qtyPerBag).toFixed(3);
@@ -460,14 +460,15 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
                                 className="form-control form-control-sm"
                                 value={form[`dispatch_bags_${idx}`] !== undefined ? form[`dispatch_bags_${idx}`] : (item.order_dispatch_bags || item.order_bags || 0)}
                                 onChange={(e) => {
-                                  let bags = parseInt(e.target.value) || 0;
+                                  let value = e.target.value;
+                                  let bags = value === '' ? '' : parseInt(value) || 0;
                                   // Cap the value at order_bags
-                                  if (bags > parseInt(item.order_bags)) {
+                                  if (bags !== '' && bags > parseInt(item.order_bags)) {
                                     bags = parseInt(item.order_bags);
                                   }
                                   const qtyPerBag = parseFloat(item.order_quantity || 0) / parseInt(item.order_bags || 1);
-                                  const qty = (bags * qtyPerBag).toFixed(3);
-                                  setForm(f => ({ ...f, [`dispatch_bags_${idx}`]: bags, [`dispatch_quantity_${idx}`]: parseFloat(qty) }));
+                                  const qty = bags === '' ? '' : (bags * qtyPerBag).toFixed(3);
+                                  setForm(f => ({ ...f, [`dispatch_bags_${idx}`]: bags, [`dispatch_quantity_${idx}`]: qty }));
                                 }}
                                 title={`Maximum: ${item.order_bags} bags`}
                               />
@@ -497,14 +498,15 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
                               className="form-control form-control-sm"
                               value={form.dispatch_bags !== undefined ? form.dispatch_bags : (order.order_dispatch_bags || order.bags || 0)}
                               onChange={(e) => {
-                                let bags = parseInt(e.target.value) || 0;
+                                let value = e.target.value;
+                                let bags = value === '' ? '' : parseInt(value) || 0;
                                 // Cap the value at order_bags
-                                if (bags > parseInt(order.bags)) {
+                                if (bags !== '' && bags > parseInt(order.bags)) {
                                   bags = parseInt(order.bags);
                                 }
                                 const qtyPerBag = parseFloat(order.order_quantity || order.quantity || 0) / parseInt(order.bags || 1);
-                                const qty = (bags * qtyPerBag).toFixed(3);
-                                setForm(f => ({ ...f, dispatch_bags: bags, dispatch_quantity: parseFloat(qty) }));
+                                const qty = bags === '' ? '' : (bags * qtyPerBag).toFixed(3);
+                                setForm(f => ({ ...f, dispatch_bags: bags, dispatch_quantity: qty }));
                               }}
                               title={`Maximum: ${order.bags} bags`}
                             />
