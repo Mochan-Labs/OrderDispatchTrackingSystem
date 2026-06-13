@@ -225,7 +225,10 @@ router.post('/api/dispatcher/presigned-url', ensureDispatcher, async (req, res) 
     }
 
     const presignedUrl = await generatePresignedUploadUrl(dealer_id, order_id, file_name, file_type);
-    res.json(presignedUrl);
+    res.json({
+      ...presignedUrl,
+      isLocal: false
+    });
   } catch (error) {
     console.error('[Dispatcher] presigned URL error:', error);
     console.error('[Dispatcher] Error details:', error.message, error.code);
