@@ -283,6 +283,29 @@ router.post('/api/dispatcher/upload-local', ensureDispatcher, async (req, res) =
   }
 });
 
+// POST presigned read URL for S3 receipts (for displaying uploaded images)
+router.post('/api/dispatcher/presigned-read-url', ensureDispatcher, async (req, res) => {
+  try {
+    const { s3Key } = req.body;
+
+    if (!s3Key) {
+      return res.status(400).json({ error: 's3Key is required' });
+    }
+
+    // Check if we're in S3 mode
+    if (process.env.STORAGE_MODE !== 'aws') {
+      return res.status(400).json({ error: 'Read presigned URLs only for S3 mode' });
+    }
+
+    console.log(`[Dispatcher] Generating read presigned URL for: ${s3Key}`);
+    const readUrl = await generatePresignedReadUrl(s3Key);
+    res.json({ url: readUrl });
+  } catch (e) {
+    console.error('[Dispatcher] presigned read URL error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST dispatch: ACCEPTED → DISPATCHED + create/update order_dispatch record
 router.post('/api/dispatcher/orders/:id/dispatch', ensureDispatcher, async (req, res) => {
   try {

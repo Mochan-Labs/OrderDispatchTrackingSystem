@@ -259,7 +259,26 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
           throw new Error(`S3 upload failed: ${s3UploadRes.status} ${s3UploadRes.statusText}`);
         }
 
-        s3Url = presignedUrl.split('?')[0]; // Remove query params from presigned URL
+        // After successful upload, get a READ presigned URL for displaying the image
+        console.log('Generating read presigned URL...');
+        const s3Key = presignedUrl.split('/receipts/')[1]?.split('?')[0];
+        if (s3Key) {
+          const readUrlRes = await fetch('/api/dispatcher/presigned-read-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ s3Key: `receipts/${s3Key}` })
+          });
+
+          if (readUrlRes.ok) {
+            const readResult = await readUrlRes.json();
+            s3Url = readResult.url;
+            console.log('Read presigned URL generated successfully');
+          } else {
+            throw new Error('Failed to generate read presigned URL');
+          }
+        } else {
+          throw new Error('Could not extract S3 key from upload URL');
+        }
         console.log('Receipt uploaded to S3:', s3Url);
       }
 
