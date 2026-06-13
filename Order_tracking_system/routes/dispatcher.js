@@ -589,39 +589,4 @@ router.patch('/api/dispatcher/orders/:id/dispatch', ensureDispatcher, async (req
   }
 });
 
-// DELETE receipt from dispatch
-router.delete('/api/dispatcher/orders/:id/dispatch/receipt', ensureDispatcher, async (req, res) => {
-  try {
-    const orderId = parseInt(req.params.id);
-
-    // Check if dispatch record exists
-    const existing = await pool.query(
-      'SELECT dispatch_id FROM odts.order_dispatch WHERE order_id = $1',
-      [orderId]
-    );
-
-    if (!existing.rows.length) {
-      return res.status(404).json({ error: 'Dispatch record not found' });
-    }
-
-    // Clear image fields
-    await pool.query(`
-      UPDATE odts.order_dispatch
-      SET image_url = NULL,
-          image_type = NULL,
-          image_original_size = NULL,
-          image_compressed_size = NULL,
-          image_uploaded_at = NULL,
-          updated_by = $1,
-          updated_at = NOW()
-      WHERE order_id = $2
-    `, [req.session.user.id, orderId]);
-
-    res.json({ success: true, message: 'Receipt deleted successfully' });
-  } catch (e) {
-    console.error('[Dispatcher] delete receipt error:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
 module.exports = router;
