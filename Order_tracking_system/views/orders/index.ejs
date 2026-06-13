@@ -164,6 +164,121 @@ function SummaryCard({ label, value, icon, borderColor, onClick, isDisabled }) {
   );
 }
 
+function ViewOrderModal({ order, onClose }) {
+  if (!order) return null;
+  const d = order.dispatch;
+
+  return (
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.5)' }}>
+      <div className="modal-dialog modal-dialog-centered modal-lg">
+        <div className="modal-content">
+          <div className="modal-header bg-info text-white">
+            <h5 className="modal-title">📋 Order #{order.order_id} — Details</h5>
+            <button type="button" className="btn-close btn-close-white" onClick={onClose}></button>
+          </div>
+          <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+            {/* Order Information */}
+            <h6 className="fw-bold text-muted mb-3 text-uppercase small">Order Information</h6>
+            <div className="row g-3 mb-4">
+              <div className="col-md-6">
+                <div className="p-3 bg-light rounded">
+                  <div className="text-muted small">Dealer</div>
+                  <div className="fw-semibold">{order.dealer_name || '—'}</div>
+                </div>
+              </div>
+              <div className="col-md-6">
+                <div className="p-3 bg-light rounded">
+                  <div className="text-muted small">Order Date</div>
+                  <div className="fw-semibold">{formatDateTime(order.order_date)}</div>
+                </div>
+              </div>
+              <div className="col-md-6">
+                <div className="p-3 bg-light rounded">
+                  <div className="text-muted small">Product</div>
+                  <div className="fw-semibold">{order.product_name || '—'}</div>
+                </div>
+              </div>
+              <div className="col-md-6">
+                <div className="p-3 bg-light rounded">
+                  <div className="text-muted small">Quantity</div>
+                  <div className="fw-semibold">{parseFloat(order.order_quantity || 0).toFixed(3)} MT</div>
+                </div>
+              </div>
+              <div className="col-md-6">
+                <div className="p-3 bg-light rounded">
+                  <div className="text-muted small">Party</div>
+                  <div className="fw-semibold">{order.party_name || '—'}</div>
+                </div>
+              </div>
+              <div className="col-md-6">
+                <div className="p-3 bg-light rounded">
+                  <div className="text-muted small">Status</div>
+                  <div><StatusBadge status={getRealTimeStatus(order)}/></div>
+                </div>
+              </div>
+            </div>
+
+            {/* Dispatch Information */}
+            {d ? (
+              <>
+                <h6 className="fw-bold text-muted mb-3 text-uppercase small">Dispatch Information</h6>
+                <div className="row g-3 mb-4">
+                  <div className="col-md-6">
+                    <div className="p-3 bg-light rounded">
+                      <div className="text-muted small">Vehicle Number</div>
+                      <div className="fw-semibold">{d.dispatch_vehicle_number || '—'}</div>
+                    </div>
+                  </div>
+                  <div className="col-md-6">
+                    <div className="p-3 bg-light rounded">
+                      <div className="text-muted small">Driver Phone</div>
+                      <div className="fw-semibold">{d.driver_phone || '—'}</div>
+                    </div>
+                  </div>
+                  <div className="col-md-6">
+                    <div className="p-3 bg-light rounded">
+                      <div className="text-muted small">Bilty Number</div>
+                      <div className="fw-semibold">{d.bilty_number || '—'}</div>
+                    </div>
+                  </div>
+                  <div className="col-md-6">
+                    <div className="p-3 bg-light rounded">
+                      <div className="text-muted small">Actual Loading Location</div>
+                      <div className="fw-semibold">{d.actual_loading_location_code || '—'}</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Receipt Image */}
+                {d.image_url && (
+                  <div className="mb-4">
+                    <h6 className="fw-bold text-muted mb-3 text-uppercase small">📸 Dispatch Receipt</h6>
+                    <div className="p-3 bg-light rounded">
+                      <div className="text-center mb-3">
+                        <img src={d.image_url} alt="Dispatch Receipt" style={{maxWidth: '100%', maxHeight: '300px', borderRadius: '8px'}} />
+                      </div>
+                      <div className="text-muted small">
+                        {d.image_uploaded_at && <div>Uploaded: {formatDateTime(d.image_uploaded_at)}</div>}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="alert alert-info mb-0">
+                <strong>No dispatch yet.</strong> Order is awaiting dispatch.
+              </div>
+            )}
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-secondary" onClick={onClose}>Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DispatchModal({ order, onClose, onRefresh }) {
   if (!order) return null;
 
@@ -1086,6 +1201,7 @@ function App() {
   const [showOnHold, setShowOnHold] = useState(true);
   const [showDispatched, setShowDispatched] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [viewOrder, setViewOrder] = useState(null);
   const [holdOrder, setHoldOrder] = useState(null);
   const [toast, setToast] = useState({ msg: '', type: 'success' });
   const [sortCol, setSortCol] = useState('order_id');
@@ -1696,7 +1812,7 @@ function App() {
                         )}
                       </td>}
                       <td className="text-nowrap">
-                        <button className="btn btn-sm btn-outline-primary me-1" onClick={() => setSelectedOrder(o)}>
+                        <button className="btn btn-sm btn-outline-primary me-1" onClick={() => setViewOrder(o)}>
                           👁️ View
                         </button>
                         {!IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
@@ -1838,6 +1954,7 @@ function App() {
         </div>
       </div>
 
+      {viewOrder && <ViewOrderModal order={viewOrder} onClose={() => setViewOrder(null)} />}
       {selectedOrder && <DispatchModal order={selectedOrder} onClose={() => setSelectedOrder(null)} onRefresh={load} />}
       {showCreateForDealer && <CreateForDealerModal onClose={() => setShowCreateForDealer(false)} onSaved={onOrderPlaced} />}
       {repeatOrder && <CreateForDealerModal repeatFrom={repeatOrder} onClose={() => setRepeatOrder(null)} onSaved={onOrderPlaced} />}
