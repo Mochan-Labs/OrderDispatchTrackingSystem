@@ -347,6 +347,7 @@ router.post('/api/dispatcher/orders/:id/dispatch', ensureDispatcher, async (req,
                 image_original_size          = COALESCE($10, image_original_size),
                 image_compressed_size        = COALESCE($11, image_compressed_size),
                 image_uploaded_at            = CASE WHEN $8 IS NOT NULL THEN NOW() ELSE image_uploaded_at END,
+                dispatch_status              = COALESCE(dispatch_status, 'dispatch_onhold'),
                 updated_by                   = $6,
                 updated_at                   = NOW()
           WHERE dispatch_id = $7`,
@@ -361,12 +362,12 @@ router.post('/api/dispatcher/orders/:id/dispatch', ensureDispatcher, async (req,
            (order_id, dispatch_vehicle_number, driver_name, driver_phone,
             bilty_number, actual_loading_location_code, image_url, image_type,
             image_original_size, image_compressed_size, image_uploaded_at,
-            created_by, updated_by, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, NOW(), NOW())`,
+            dispatch_status, created_by, updated_by, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13, NOW(), NOW())`,
         [orderId, vehicleUpper, driver_name || null, driver_phone.trim(),
          bilty_number.trim(), actual_loading_location_code.trim(),
          image_url || null, image_type || null, image_original_size || null,
-         image_compressed_size || null, image_url ? 'NOW()' : null, userId]
+         image_compressed_size || null, image_url ? 'NOW()' : null, 'dispatch_onhold', userId]
       );
     }
 

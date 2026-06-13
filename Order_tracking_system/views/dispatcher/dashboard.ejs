@@ -1580,7 +1580,7 @@ function DispatchedDealersModal({ orders, onSelectDealer, onClose }) {
   );
 }
 
-function DealerDispatchedOrdersModal({ orders, dealerId, onClose, onBack, onView }) {
+function DealerDispatchedOrdersModal({ orders, dealerId, onClose, onBack, onView, onDispatch }) {
   const dispatchedOrders = orders
     .filter(o => o.dealer_id === dealerId && o.order_status === 'DISPATCHED')
     .sort((a, b) => new Date(b.dispatch_created_at) - new Date(a.dispatch_created_at));
@@ -1657,6 +1657,11 @@ function DealerDispatchedOrdersModal({ orders, dealerId, onClose, onBack, onView
                           👁️ View
                         </button>
                       )}
+                      {onDispatch && (
+                        <button className="btn btn-sm btn-warning me-1" onClick={() => onDispatch(order)}>
+                          ✏️ Edit Dispatch
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1728,7 +1733,7 @@ function OrderRow({ order, onAccept, onDispatch, onView, isOrderOverdue }) {
         )}
         {order.order_status === 'DISPATCHED' && (
           <>
-            <button className="btn btn-sm btn-warning me-1" onClick={() => onDispatch(order)}>
+            <button className="btn btn-sm btn-outline-info me-1" onClick={() => onDispatch(order)}>
               ✏️ Edit Dispatch
             </button>
             <div style={{ fontSize: '.8rem', marginTop: '0.5rem' }}>
@@ -2450,6 +2455,10 @@ function App() {
           }}
           onView={order => {
             setViewOrder(order);
+          }}
+          onDispatch={order => {
+            setDispatchModal(order);
+            setSelectedDispatchedDealerId(null);
           }}
         />
       )}

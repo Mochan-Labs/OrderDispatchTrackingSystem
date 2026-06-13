@@ -1846,7 +1846,7 @@ function App() {
                           </button>
                         )}
                         {IS_ADMIN_OR_OFFICE && (o.order_status === 'ACCEPTED' || o.order_status === 'DISPATCHED') && (
-                          <button className="btn btn-sm btn-outline-info me-1" onClick={() => setSelectedOrder(o)}>
+                          <button className="btn btn-sm btn-warning me-1" onClick={() => setSelectedOrder(o)}>
                             ✏️ Edit Dispatch
                           </button>
                         )}
