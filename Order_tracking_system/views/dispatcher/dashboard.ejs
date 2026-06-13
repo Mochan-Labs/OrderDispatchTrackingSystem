@@ -170,6 +170,30 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
     setErr('');
   };
 
+  const handleDownloadReceipt = async (imageUrl, orderId) => {
+    try {
+      const response = await fetch(imageUrl);
+      if (!response.ok) throw new Error('Failed to download receipt');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+
+      const timestamp = new Date().toISOString().split('T')[0];
+      const ext = imageUrl.includes('jpeg') || imageUrl.includes('jpg') ? 'jpg' : 'png';
+      link.download = `Receipt_Order${orderId}_${timestamp}.${ext}`;
+
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Download failed:', error);
+      setErr('Failed to download receipt');
+    }
+  };
+
   const uploadReceipt = async () => {
     if (!selectedFile) return;
 
@@ -913,6 +937,13 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
                     <div className="d-flex gap-2 flex-column flex-sm-row">
                       <button
                         type="button"
+                        className="btn btn-sm btn-outline-primary flex-grow-1"
+                        onClick={() => handleDownloadReceipt(order.image_url, order.order_id)}
+                      >
+                        📥 Download
+                      </button>
+                      <button
+                        type="button"
                         className="btn btn-sm btn-outline-secondary flex-grow-1"
                         onClick={() => galleryInputRef.current?.click()}
                         disabled={uploading}
@@ -1011,6 +1042,13 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
                       onClick={() => window.open(uploadedImageUrl, '_blank')}
                     />
                     <div className="d-flex gap-2 mt-3 flex-column flex-sm-row">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-primary flex-grow-1"
+                        onClick={() => handleDownloadReceipt(uploadedImageUrl, order.order_id)}
+                      >
+                        📥 Download
+                      </button>
                       <button
                         type="button"
                         className="btn btn-sm btn-outline-secondary flex-grow-1"
@@ -1270,10 +1308,17 @@ function ViewOrderModal({ order, onClose, onBack }) {
                   onClick={() => window.open(order.image_url, '_blank')}
                 />
                 {order.image_uploaded_at && (
-                  <div className="text-muted small mt-2">
+                  <div className="text-muted small mt-2 mb-3">
                     Uploaded: {fmt(order.image_uploaded_at)}
                   </div>
                 )}
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-primary"
+                  onClick={() => handleDownloadReceipt(order.image_url, order.order_id)}
+                >
+                  📥 Download Receipt
+                </button>
               </div>
             )}
           </div>
