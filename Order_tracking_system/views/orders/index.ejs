@@ -164,309 +164,408 @@ function SummaryCard({ label, value, icon, borderColor, onClick, isDisabled }) {
   );
 }
 
-function DispatchModal({ order, onClose }) {
+function DispatchModal({ order, onClose, onRefresh }) {
   if (!order) return null;
+
+  const [form, setForm] = useState({
+    vehicle_number: order.dispatch?.dispatch_vehicle_number || order.dispatch_vehicle_number || '',
+    driver_name: order.dispatch?.driver_name || order.dispatch_driver_name || '',
+    driver_phone: order.dispatch?.driver_phone || order.dispatch_driver_phone || order.driver_phone || '',
+    bilty_number: order.dispatch?.bilty_number || order.bilty_number || '',
+    actual_loading_location_code: order.dispatch?.actual_loading_location_code || order.actual_loading_location_code || '',
+    dispatch_comments: order.dispatch?.dispatch_comments || order.dispatch_comments || ''
+  });
+
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadedImageUrl, setUploadedImageUrl] = useState(null);
+  const [imageMetadata, setImageMetadata] = useState(null);
+  const [currentReceiptUrl, setCurrentReceiptUrl] = useState(order.dispatch?.image_url || order.image_url);
+  const [loadingLocations, setLoadingLocations] = useState([]);
+
+  const galleryInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
+
+  useEffect(() => {
+    fetch('/api/codes/loading_location', { credentials: 'include' })
+      .then(r => r.json())
+      .then(data => setLoadingLocations(Array.isArray(data) ? data : []))
+      .catch(e => {
+        console.error('Failed to load locations:', e);
+        setLoadingLocations([]);
+      });
+  }, []);
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/gif', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      setErr('Please select a valid image file (JPG, PNG, GIF, WebP)');
+      return;
+    }
+
+    setSelectedFile(file);
+    const reader = new FileReader();
+    reader.onload = (evt) => setImagePreview(evt.target.result);
+    reader.readAsDataURL(file);
+    setErr('');
+  };
+
+  const uploadReceipt = async () => {
+    if (!selectedFile) return;
+
+    setUploading(true);
+    setErr('');
+
+    try {
+      setUploadProgress(20);
+
+      const presignedRes = await fetch('/api/dispatcher/presigned-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order_id: order.order_id,
+          dealer_id: order.dealer_id,
+          file_name: selectedFile.name,
+          file_type: selectedFile.type,
+        }),
+      });
+
+      if (!presignedRes.ok) {
+        const errorData = await presignedRes.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to get presigned URL');
+      }
+
+      const { url: presignedUrl, s3Key, isLocal } = await presignedRes.json();
+      setUploadProgress(40);
+
+      let s3Url;
+
+      if (isLocal) {
+        const fileBase64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const dataUrl = reader.result;
+            const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+            resolve(base64);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(selectedFile);
+        });
+
+        const localUploadRes = await fetch(presignedUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filePath: s3Key,
+            fileData: fileBase64,
+            order_id: order.order_id,
+            dealer_id: order.dealer_id
+          })
+        });
+
+        if (!localUploadRes.ok) {
+          throw new Error(`Upload failed: ${localUploadRes.status}`);
+        }
+
+        const localResult = await localUploadRes.json();
+        s3Url = localResult.image_url;
+      } else {
+        const s3UploadRes = await fetch(presignedUrl, {
+          method: 'PUT',
+          body: selectedFile,
+          headers: { 'Content-Type': selectedFile.type },
+        });
+
+        if (!s3UploadRes.ok) {
+          throw new Error(`Upload failed: ${s3UploadRes.status}`);
+        }
+
+        const s3Key_extracted = presignedUrl.split('/receipts/')[1]?.split('?')[0];
+        if (s3Key_extracted) {
+          const readUrlRes = await fetch('/api/dispatcher/presigned-read-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ s3Key: `receipts/${s3Key_extracted}` })
+          });
+
+          if (readUrlRes.ok) {
+            const readResult = await readUrlRes.json();
+            s3Url = readResult.url;
+          } else {
+            throw new Error('Failed to generate read URL');
+          }
+        }
+      }
+
+      setUploadProgress(100);
+      setUploadedImageUrl(s3Url);
+      setImageMetadata({
+        image_url: s3Url,
+        image_type: selectedFile.type,
+        image_original_size: selectedFile.size,
+        image_compressed_size: null,
+      });
+      setSelectedFile(null);
+      setImagePreview(null);
+      setUploading(false);
+    } catch (error) {
+      console.error('Upload error:', error);
+      setErr(`Upload failed: ${error.message}`);
+      setUploading(false);
+      setUploadProgress(0);
+    }
+  };
+
+  const handleDeleteCurrentReceipt = async () => {
+    if (!confirm('Delete this receipt?')) return;
+
+    try {
+      const res = await fetch(`/api/dispatcher/orders/${order.order_id}/dispatch/receipt`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to delete receipt');
+      }
+
+      setCurrentReceiptUrl(null);
+    } catch (error) {
+      setErr(error.message);
+    }
+  };
+
+  const handleDownloadReceipt = async (imageUrl) => {
+    try {
+      const response = await fetch(imageUrl);
+      if (!response.ok) throw new Error('Failed to download');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+
+      const timestamp = new Date().toISOString().split('T')[0];
+      const ext = imageUrl.includes('jpeg') || imageUrl.includes('jpg') ? 'jpg' : 'png';
+      link.download = `Receipt_Order${order.order_id}_${timestamp}.${ext}`;
+
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      setErr('Failed to download receipt');
+    }
+  };
+
+  const submit = async () => {
+    if (!form.vehicle_number.trim()) return setErr('Vehicle number is required');
+    if (!form.driver_phone.trim()) return setErr('Driver phone is required');
+    if (!/^\d{10}$/.test(form.driver_phone.trim())) return setErr('Driver phone must be 10 digits');
+    if (!form.bilty_number.trim()) return setErr('Bilty number is required');
+    if (!form.actual_loading_location_code) return setErr('Actual loading location is required');
+
+    setSaving(true);
+    setErr('');
+
+    try {
+      const payload = {
+        vehicle_number: form.vehicle_number,
+        driver_name: form.driver_name,
+        driver_phone: form.driver_phone,
+        bilty_number: form.bilty_number,
+        actual_loading_location_code: form.actual_loading_location_code
+      };
+
+      // Add image data if uploading new receipt
+      if (uploadedImageUrl && imageMetadata) {
+        payload.image_url = uploadedImageUrl;
+        payload.image_type = imageMetadata.image_type || '';
+        payload.image_original_size = imageMetadata.image_original_size || null;
+        payload.image_compressed_size = imageMetadata.image_compressed_size || null;
+      } else if (currentReceiptUrl && !uploadedImageUrl) {
+        // Keep existing receipt if not uploading new one
+        payload.image_url = currentReceiptUrl;
+      } else if (uploadedImageUrl) {
+        // Have uploaded URL but no metadata
+        payload.image_url = uploadedImageUrl;
+      }
+
+      const res = await fetch(`/api/dispatcher/orders/${order.order_id}/dispatch`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Save failed');
+      }
+
+      if (onRefresh) onRefresh();
+      onClose();
+    } catch (error) {
+      setErr(error.message);
+      setSaving(false);
+    }
+  };
+
   const d = order.dispatch;
+
   return (
     <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.5)' }}>
-      <div className="modal-dialog modal-dialog-centered modal-lg">
+      <div className="modal-dialog modal-dialog-centered modal-xl">
         <div className="modal-content">
           <div className="modal-header bg-primary text-white">
-            <h5 className="modal-title">📋 Order #{order.order_id} — Dispatch Details</h5>
+            <h5 className="modal-title">✏️ Edit Dispatch — Order #{order.order_id}</h5>
             <button type="button" className="btn-close btn-close-white" onClick={onClose}></button>
           </div>
-          <div className="modal-body">
-            {/* Order Info */}
+          <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+            {err && <div className="alert alert-danger py-2 mb-3">{err}</div>}
+
+            {/* Order Info - Read Only */}
             <h6 className="fw-bold text-muted mb-3 text-uppercase small">Order Information</h6>
             <div className="row g-3 mb-4">
-              {/* Row 1: Products & Quantities — Always in table format */}
-              <div className="col-12">
-                <div className="p-3 bg-light rounded">
-                  <div className="text-muted small mb-2 fw-semibold">Products &amp; Quantities</div>
-                  <table className="table table-sm table-bordered mb-0" style={{ fontSize: '.88rem' }}>
-                    <thead className="table-light">
-                      <tr>
-                        <th>Product</th>
-                        <th style={{ width: 90 }}>Bags</th>
-                        <th style={{ width: 110 }}>Qty (MT)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {order.items && order.items.length > 0 ? (
-                        order.items.map((item, idx) => (
-                          <tr key={idx}>
-                            <td>{item.product_name || `Product #${item.product_id}`}</td>
-                            <td>{item.order_bags || '—'}</td>
-                            <td>{parseFloat(item.order_quantity).toFixed(3)}</td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td>{order.product_name || '—'}</td>
-                          <td>—</td>
-                          <td>{order.quantity.toFixed(3)}</td>
-                        </tr>
-                      )}
-                    </tbody>
-                    {order.items && order.items.length > 1 && (
-                      <tfoot>
-                        <tr className="table-secondary fw-bold">
-                          <td colSpan={2} className="text-muted small">Total</td>
-                          <td>{order.quantity.toFixed(3)}</td>
-                        </tr>
-                      </tfoot>
-                    )}
-                  </table>
-                </div>
-              </div>
-              {/* Row 2: Party Company Name + Party Phone + Party Address */}
               <div className="col-md-4">
                 <div className="p-3 bg-light rounded">
-                  <div className="text-muted small">Party Company Name</div>
+                  <div className="text-muted small">Party</div>
                   <div className="fw-semibold">{order.party_name || '—'}</div>
                 </div>
               </div>
               <div className="col-md-4">
                 <div className="p-3 bg-light rounded">
-                  <div className="text-muted small">Party Phone</div>
-                  <div className="fw-semibold">{order.party_phone || '—'}</div>
+                  <div className="text-muted small">Product</div>
+                  <div className="fw-semibold">{order.product_name || '—'}</div>
                 </div>
               </div>
               <div className="col-md-4">
                 <div className="p-3 bg-light rounded">
-                  <div className="text-muted small">Party Address</div>
-                  <div className="fw-semibold">{order.party_address || '—'}</div>
+                  <div className="text-muted small">Quantity</div>
+                  <div className="fw-semibold">{parseFloat(order.order_quantity || 0).toFixed(3)} MT</div>
                 </div>
               </div>
-              {/* Row 3: Load Type + Preferred Loading Location */}
-              <div className="col-md-6">
-                <div className="p-3 bg-light rounded">
-                  <div className="text-muted small">Load Type</div>
-                  <div className="fw-semibold">{order.load_type_desc || '—'}</div>
-                </div>
-              </div>
-              <div className="col-md-6">
-                <div className="p-3 bg-light rounded">
-                  <div className="text-muted small">Preferred Loading Location</div>
-                  <div className="fw-semibold">{order.preferred_location_desc || '—'}</div>
-                </div>
-              </div>
-
-              {/* Self DOT Driver Details (if applicable) */}
-              {order.load_type_code === 'SLF_DOT' && (order.driver_name_on_order || order.driver_phone_on_order || order.vehicle_number_on_order) && (
-                <>
-                  <div className="col-12">
-                    <div className="p-3 border rounded" style={{ background: '#f0f8ff', borderColor: '#b0d4f1' }}>
-                      <div className="fw-semibold small text-primary mb-3">🚛 Self DOT — Driver Details</div>
-                      <div className="row g-3">
-                        <div className="col-md-4">
-                          <div className="text-muted small">Driver Name</div>
-                          <div className="fw-semibold">{order.driver_name_on_order || '—'}</div>
-                        </div>
-                        <div className="col-md-4">
-                          <div className="text-muted small">Driver Phone</div>
-                          <div className="fw-semibold">{order.driver_phone_on_order || '—'}</div>
-                        </div>
-                        <div className="col-md-4">
-                          <div className="text-muted small">Vehicle Number</div>
-                          <div className="fw-semibold">{order.vehicle_number_on_order || '—'}</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {/* Row 4: Order Date + Order Status */}
-              <div className="col-md-6">
-                <div className="p-3 bg-light rounded">
-                  <div className="text-muted small">Order Date</div>
-                  <div className="fw-semibold">{formatDateTime(order.order_date)}</div>
-                </div>
-              </div>
-              <div className="col-md-6">
-                <div className="p-3 bg-light rounded">
-                  <div className="text-muted small">Order Status</div>
-                  <div><StatusBadge status={getRealTimeStatus(order)}/></div>
-                </div>
-              </div>
-              {order.remarks && (
-                <div className="col-12">
-                  <div className="p-3 bg-light rounded">
-                    <div className="text-muted small">Remarks</div>
-                    <div className="fw-semibold">{order.remarks}</div>
-                  </div>
-                </div>
-              )}
-              {order.on_hold_reason && (
-                <div className="col-12">
-                  <div className="p-3 bg-warning bg-opacity-10 rounded border border-warning">
-                    <div className="text-muted small">⏸️ On Hold Reason</div>
-                    <div className="fw-semibold">{order.on_hold_reason}</div>
-                    {order.on_hold_by && <div className="text-muted small mt-1">By: {order.on_hold_by_role || 'Unknown'}</div>}
-                  </div>
-                </div>
-              )}
             </div>
 
-            {/* Dispatch Info */}
-            {d ? (
-              <>
-                <h6 className="fw-bold text-muted mb-3 text-uppercase small">Dispatch Information</h6>
-                <div className="row g-3">
-                  <div className="col-md-4">
-                    <div className="p-3 bg-light rounded">
-                      <div className="text-muted small">Dispatch ID</div>
-                      <div className="fw-semibold">#{d.dispatch_id}</div>
-                    </div>
-                  </div>
-                  <div className="col-md-4">
-                    <div className="p-3 bg-light rounded">
-                      <div className="text-muted small">Dispatch Date</div>
-                      <div className="fw-semibold">{d.dispatch_date}</div>
-                    </div>
-                  </div>
-                  <div className="col-md-4">
-                    <div className="p-3 bg-light rounded">
-                      <div className="text-muted small">Vehicle No.</div>
-                      <div className="fw-semibold">{d.vehicle_no}</div>
-                    </div>
-                  </div>
-                  <div className="col-md-4">
-                    <div className="p-3 bg-light rounded">
-                      <div className="text-muted small">Driver Name</div>
-                      <div className="fw-semibold">{d.driver_name}</div>
-                    </div>
-                  </div>
-                  <div className="col-md-4">
-                    <div className="p-3 bg-light rounded">
-                      <div className="text-muted small">Driver Phone</div>
-                      <div className="fw-semibold">{d.driver_phone}</div>
-                      <div className="d-flex gap-1 mt-2 flex-wrap">
-                        <a
-                          className="btn btn-sm btn-outline-primary"
-                          href={`/tracking?driver=${encodeURIComponent(d.driver_phone)}&order=${order.order_id}`}
-                        >
-                          📍 Live Track
-                        </a>
-                        <button type="button" className="btn btn-sm btn-outline-secondary"
-                          onClick={()=>{
-                            const link = `${window.location.origin}/driver/track?phone=${encodeURIComponent(d.driver_phone)}&order=${order.order_id}&vehicle=${encodeURIComponent(d.vehicle_no||'')}`;
-                            navigator.clipboard.writeText(link).then(()=>notify('Driver tracking link copied to clipboard!','success'));
-                          }}>
-                          🔗 Copy Driver Link
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="col-md-4">
-                    <div className="p-3 bg-light rounded">
-                      <div className="text-muted small">Expected Delivery</div>
-                      <div className="fw-semibold">{d.expected_delivery}</div>
-                    </div>
-                  </div>
-                  {d.actual_delivery && (
-                    <div className="col-md-4">
-                      <div className="p-3 bg-success bg-opacity-10 rounded border border-success">
-                        <div className="text-muted small">Actual Delivery</div>
-                        <div className="fw-semibold text-success">{d.actual_delivery}</div>
-                      </div>
-                    </div>
-                  )}
-                </div>
+            {/* Editable Dispatch Form */}
+            <h6 className="fw-bold text-muted mb-3 text-uppercase small">Dispatch Details</h6>
+            <div className="row g-3 mb-4">
+              <div className="col-md-6">
+                <label className="form-label fw-semibold">Vehicle Number <span className="text-danger">*</span></label>
+                <input type="text" className="form-control" value={form.vehicle_number} onChange={e => set('vehicle_number', e.target.value)} />
+              </div>
+              <div className="col-md-6">
+                <label className="form-label fw-semibold">Driver Name</label>
+                <input type="text" className="form-control" value={form.driver_name} onChange={e => set('driver_name', e.target.value)} placeholder="Driver name" />
+              </div>
+              <div className="col-md-6">
+                <label className="form-label fw-semibold">Driver Phone <span className="text-danger">*</span></label>
+                <input type="tel" className="form-control" placeholder="10-digit" value={form.driver_phone} onChange={e => set('driver_phone', e.target.value.replace(/[^0-9]/g, '').slice(0, 10))} />
+              </div>
+              <div className="col-md-6">
+                <label className="form-label fw-semibold">Bilty Number <span className="text-danger">*</span></label>
+                <input type="text" className="form-control" value={form.bilty_number} onChange={e => set('bilty_number', e.target.value)} />
+              </div>
+              <div className="col-md-6">
+                <label className="form-label fw-semibold">Actual Loading Location <span className="text-danger">*</span></label>
+                <select className="form-select" value={form.actual_loading_location_code} onChange={e => set('actual_loading_location_code', e.target.value)}>
+                  <option value="">-- Select --</option>
+                  {loadingLocations.map(l => <option key={l.code} value={l.code}>{l.code_desc || l.code}</option>)}
+                </select>
+              </div>
+              <div className="col-12">
+                <label className="form-label fw-semibold">Comments</label>
+                <textarea className="form-control" rows="2" value={form.dispatch_comments} onChange={e => set('dispatch_comments', e.target.value)} placeholder="Add any dispatch comments..." />
+              </div>
+            </div>
 
-                {/* Receipt Image */}
-                {d?.image_url && (
-                  <div className="mt-4">
-                    <h6 className="fw-bold text-muted mb-3 text-uppercase small">📸 Dispatch Receipt</h6>
-                    <div className="p-3 bg-light rounded">
-                      <div className="text-center mb-3">
-                        <img src={d.image_url} alt="Dispatch Receipt" style={{maxWidth: '100%', maxHeight: 300, borderRadius: 4}} />
-                      </div>
-                      <div className="row g-2 text-muted small">
-                        {d.image_type && (
-                          <div className="col-6">
-                            <div className="text-muted">File Type</div>
-                            <div className="fw-semibold">{d.image_type}</div>
-                          </div>
-                        )}
-                        {d.image_original_size && (
-                          <div className="col-6">
-                            <div className="text-muted">Original Size</div>
-                            <div className="fw-semibold">{(d.image_original_size / 1024).toFixed(1)} KB</div>
-                          </div>
-                        )}
-                        {d.image_compressed_size && (
-                          <div className="col-6">
-                            <div className="text-muted">Compressed Size</div>
-                            <div className="fw-semibold">{(d.image_compressed_size / 1024).toFixed(1)} KB</div>
-                          </div>
-                        )}
-                        {d.image_uploaded_at && (
-                          <div className="col-6">
-                            <div className="text-muted">Uploaded At</div>
-                            <div className="fw-semibold">{formatDateTime(d.image_uploaded_at)}</div>
-                          </div>
-                        )}
-                      </div>
-                      <div className="mt-3">
-                        <a href={d.image_url} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-outline-primary">
-                          🔍 Open Full Size
-                        </a>
-                      </div>
-                    </div>
+            {/* Receipt Section */}
+            <h6 className="fw-bold text-muted mb-3 text-uppercase small">📸 Receipt Photo</h6>
+            <div className="mb-4 p-3 border rounded" style={{ background: '#f9f9f9' }}>
+              {currentReceiptUrl && !uploadedImageUrl ? (
+                <>
+                  <img src={currentReceiptUrl} alt="Receipt" style={{maxWidth: '100%', maxHeight: '250px', borderRadius: '8px', marginBottom: '12px'}} />
+                  <div className="d-flex gap-2 flex-column flex-sm-row">
+                    <button type="button" className="btn btn-sm btn-outline-primary flex-grow-1" onClick={() => handleDownloadReceipt(currentReceiptUrl)}>
+                      📥 Download
+                    </button>
+                    <button type="button" className="btn btn-sm btn-outline-secondary flex-grow-1" onClick={() => galleryInputRef.current?.click()} disabled={uploading}>
+                      🔄 Replace
+                    </button>
+                    <button type="button" className="btn btn-sm btn-outline-danger flex-grow-1" onClick={handleDeleteCurrentReceipt}>
+                      🗑️ Delete
+                    </button>
                   </div>
-                )}
-
-                {/* Progress Tracker */}
-                <div className="mt-4">
-                  <h6 className="fw-bold text-muted mb-3 text-uppercase small">Order Progress</h6>
-                  <div className="d-flex align-items-center gap-0 flex-wrap">
-                    {['ORDER_PLACED','ACCEPTED','DISPATCHED'].map((s, i, arr) => {
-                      const statuses = ['ORDER_PLACED','ACCEPTED','DISPATCHED'];
-                      const currentIdx = statuses.indexOf(order.order_status);
-                      const stepIdx = statuses.indexOf(s);
-                      const done = stepIdx <= currentIdx;
-                      const active = stepIdx === currentIdx;
-                      return (
-                        <React.Fragment key={s}>
-                          <div className="d-flex flex-column align-items-center" style={{flex:'1',minWidth:'60px'}}>
-                            <div style={{
-                              width:32, height:32, borderRadius:'50%', display:'flex',
-                              alignItems:'center', justifyContent:'center', fontSize:14,
-                              background: done ? (active ? '#0d6efd' : '#198754') : '#dee2e6',
-                              color: done ? '#fff' : '#6c757d', fontWeight:'bold'
-                            }}>{done ? (active ? '●' : '✓') : (i+1)}</div>
-                            <div className="text-center mt-1" style={{fontSize:'10px', color: done?'#198754':'#6c757d', fontWeight: active?'bold':'normal'}}>
-                              {STATUS_CONFIG[s]?.text}
-                            </div>
-                          </div>
-                          {i < arr.length - 1 && (
-                            <div style={{flex:'1', height:3, background: stepIdx < currentIdx ? '#198754' : '#dee2e6', minWidth:10, marginBottom:18}}></div>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
+                </>
+              ) : uploadedImageUrl ? (
+                <>
+                  <img src={uploadedImageUrl} alt="Uploaded" style={{maxWidth: '100%', maxHeight: '250px', borderRadius: '8px', marginBottom: '12px'}} />
+                  <div className="text-muted small mb-3">New receipt ready to save</div>
+                  <div className="d-flex gap-2 flex-column flex-sm-row">
+                    <button type="button" className="btn btn-sm btn-outline-primary flex-grow-1" onClick={() => handleDownloadReceipt(uploadedImageUrl)}>
+                      📥 Download
+                    </button>
+                    <button type="button" className="btn btn-sm btn-outline-secondary flex-grow-1" onClick={() => { setUploadedImageUrl(null); setSelectedFile(null); setImagePreview(null); }}>
+                      ❌ Cancel Upload
+                    </button>
                   </div>
+                </>
+              ) : !selectedFile ? (
+                <div className="d-flex gap-2 flex-column flex-sm-row">
+                  <button type="button" className="btn btn-sm btn-outline-secondary flex-grow-1" onClick={() => galleryInputRef.current?.click()} disabled={uploading}>
+                    📁 Choose from Gallery
+                  </button>
+                  <button type="button" className="btn btn-sm btn-outline-secondary flex-grow-1" onClick={() => cameraInputRef.current?.click()} disabled={uploading}>
+                    📷 Take a Photo
+                  </button>
                 </div>
-              </>
-            ) : (
-              <div className={`alert mt-2 mb-0 ${order.order_status === 'ON_HOLD' ? 'alert-danger' : 'alert-info'}`}>
-                {order.order_status === 'ON_HOLD'
-                  ? <><strong>Dispatch not yet initiated.</strong> Your order is put on hold. Kindly un-hold your order so it can be further processed.</>
-                  : <><strong>Dispatch not yet initiated.</strong> Your order is being processed. Dispatch details will appear here once the order is confirmed and dispatched.</>
-                }
+              ) : (
+                <>
+                  <div className="text-muted small mb-2">Selected: {selectedFile.name}</div>
+                  <button type="button" className="btn btn-sm btn-primary" onClick={uploadReceipt} disabled={uploading}>
+                    {uploading ? `Uploading ${uploadProgress}%...` : 'Upload Receipt'}
+                  </button>
+                  <button type="button" className="btn btn-sm btn-outline-secondary ms-2" onClick={() => { setSelectedFile(null); setImagePreview(null); }}>
+                    Cancel
+                  </button>
+                </>
+              )}
+              <input ref={galleryInputRef} type="file" accept="image/*" onChange={handleFileSelect} style={{ display: 'none' }} />
+              <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileSelect} style={{ display: 'none' }} />
+            </div>
+
+            {/* Old Receipt Info Display */}
+            {d?.image_url && (
+              <div className="mt-4 p-3 bg-light rounded">
+                <div className="text-muted small mb-2 fw-semibold">Current Receipt Info</div>
+                {d.image_type && <div className="text-muted small">Type: {d.image_type}</div>}
+                {d.image_original_size && <div className="text-muted small">Size: {(d.image_original_size / 1024).toFixed(1)} KB</div>}
               </div>
             )}
           </div>
+
           <div className="modal-footer">
-            <button className="btn btn-secondary" onClick={onClose}>Close</button>
+            <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
+            <button className="btn btn-primary" onClick={submit} disabled={saving}>
+              {saving ? 'Saving...' : 'Save Dispatch Details'}
+            </button>
           </div>
         </div>
       </div>
     </div>
   );
 }
+
+// Placeholder for old code that should be removed - marking for cleanup
 
 function CreateForDealerModal({ onClose, onSaved, repeatFrom }) {
   const [dealers, setDealers] = useState([]);
@@ -1630,6 +1729,11 @@ function App() {
                             🚛 Dispatch
                           </button>
                         )}
+                        {IS_ADMIN_OR_OFFICE && (o.order_status === 'ACCEPTED' || o.order_status === 'DISPATCHED') && (
+                          <button className="btn btn-sm btn-outline-info me-1" onClick={() => setSelectedOrder(o)}>
+                            ✏️ Edit Dispatch
+                          </button>
+                        )}
                         {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && o.on_hold_by_role !== 'DEALER' && (
                           <button className="btn btn-sm btn-outline-warning me-1" onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>
                             ⏸️ Unhold
@@ -1692,6 +1796,11 @@ function App() {
                               🚛 Dispatch
                             </button>
                           )}
+                          {IS_ADMIN_OR_OFFICE && (o.order_status === 'ACCEPTED' || o.order_status === 'DISPATCHED') && (
+                            <button className="btn btn-sm btn-outline-info me-1" onClick={() => setSelectedOrder(o)}>
+                              ✏️ Edit Dispatch
+                            </button>
+                          )}
                           {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && o.on_hold_by_role !== 'DEALER' && (
                             <button className="btn btn-sm btn-outline-warning me-1" onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>
                               ⏸️ Unhold
@@ -1729,7 +1838,7 @@ function App() {
         </div>
       </div>
 
-      {selectedOrder && <DispatchModal order={selectedOrder} onClose={() => setSelectedOrder(null)} />}
+      {selectedOrder && <DispatchModal order={selectedOrder} onClose={() => setSelectedOrder(null)} onRefresh={load} />}
       {showCreateForDealer && <CreateForDealerModal onClose={() => setShowCreateForDealer(false)} onSaved={onOrderPlaced} />}
       {repeatOrder && <CreateForDealerModal repeatFrom={repeatOrder} onClose={() => setRepeatOrder(null)} onSaved={onOrderPlaced} />}
       {holdOrder && <OnHoldModal order={holdOrder} onConfirm={handleDealerHold} onClose={() => setHoldOrder(null)} requireReason={IS_ADMIN} />}

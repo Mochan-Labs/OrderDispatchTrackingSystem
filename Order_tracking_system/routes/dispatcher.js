@@ -37,9 +37,9 @@ function ensureDispatcher(req, res, next) {
     return isApiRoute ? res.status(401).json({ error: 'Unauthorized' }) : res.redirect('/signin');
   }
   const role = req.session.user.role;
-  if (role !== 'DISPATCHER' && role !== 'ADMIN') {
+  if (role !== 'DISPATCHER' && role !== 'ADMIN' && role !== 'OFFICE_EXECUTIVE') {
     const isApiRoute = req.path.startsWith('/api/');
-    return isApiRoute ? res.status(403).json({ error: 'Access denied. Dispatcher or Admin only.' }) : res.status(403).send('Access denied. Dispatcher or Admin only.');
+    return isApiRoute ? res.status(403).json({ error: 'Access denied. Dispatcher, Admin, or Office Executive only.' }) : res.status(403).send('Access denied. Dispatcher, Admin, or Office Executive only.');
   }
   return next();
 }
@@ -585,6 +585,39 @@ router.patch('/api/dispatcher/orders/:id/dispatch', ensureDispatcher, async (req
     res.json({ success: true, message: 'Dispatch details updated successfully' });
   } catch (e) {
     console.error('[Dispatcher] update dispatch details error:', e.message, e.detail);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE receipt from dispatch
+router.delete('/api/dispatcher/orders/:id/dispatch/receipt', ensureDispatcher, async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id);
+
+    const existing = await pool.query(
+      'SELECT dispatch_id FROM odts.order_dispatch WHERE order_id = $1',
+      [orderId]
+    );
+
+    if (!existing.rows.length) {
+      return res.status(404).json({ error: 'Dispatch record not found' });
+    }
+
+    await pool.query(`
+      UPDATE odts.order_dispatch
+      SET image_url = NULL,
+          image_type = NULL,
+          image_original_size = NULL,
+          image_compressed_size = NULL,
+          image_uploaded_at = NULL,
+          updated_by = $1,
+          updated_at = NOW()
+      WHERE order_id = $2
+    `, [req.session.user.id, orderId]);
+
+    res.json({ success: true, message: 'Receipt deleted successfully' });
+  } catch (e) {
+    console.error('[Dispatcher] delete receipt error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
