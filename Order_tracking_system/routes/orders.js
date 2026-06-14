@@ -246,7 +246,7 @@ async function fetchOrders({ dealerId, startDate, endDate }) {
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const sql = `
     SELECT o.*,
-           d.dealer_name,
+           d.dealer_name, d.dealer_company_name,
            dp.party_company_name, dp.party_name AS party_name_col, dp.party_phone, dp.party_address,
            lt.code_desc  AS load_type_desc,
            pl.code_desc  AS preferred_location_desc,

@@ -46,6 +46,7 @@ const STATUS_CONFIG = {
 };
 
 const validatePhone=(val)=>val.replace(/[^0-9]/g,'').slice(0,10);
+const isValidPhone=(val)=>/^\d{10}$/.test(val.replace(/[^0-9]/g,''));
 
 function fmt(value) {
   if (!value) return '—';
@@ -826,6 +827,7 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
                       value={form.driver_phone || order.dispatch_driver_phone || ''}
                       onChange={(e) => setForm(f => ({ ...f, driver_phone: validatePhone(e.target.value) }))}
                       pattern="[0-9]{10}"
+                      title="Driver phone must be exactly 10 digits (0-9 only)"
                     />
                   </div>
                   <div className="col-md-6">
@@ -905,6 +907,7 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
                       value={form.driver_phone}
                       onChange={e => set('driver_phone', validatePhone(e.target.value))}
                       pattern="[0-9]{10}"
+                      title="Driver phone must be exactly 10 digits (0-9 only)"
                     />
                   </div>
                   <div className="col-12">
@@ -1733,7 +1736,7 @@ function OrderRow({ order, onAccept, onDispatch, onView, isOrderOverdue }) {
         )}
         {order.order_status === 'DISPATCHED' && (
           <>
-            <button className="btn btn-sm btn-outline-info me-1" onClick={() => onDispatch(order)}>
+            <button className="btn btn-sm btn-warning me-1" onClick={() => onDispatch(order)}>
               ✏️ Edit Dispatch
             </button>
             <div style={{ fontSize: '.8rem', marginTop: '0.5rem' }}>
@@ -1844,6 +1847,9 @@ function OverdueOrdersModal({ orders, dealerId, onClose, onBack, onView, onAccep
                       {o.order_status === 'ACCEPTED' && (
                         <button className="btn btn-sm btn-success" onClick={() => onDispatch(o)}>🚛 Dispatch</button>
                       )}
+                      {o.order_status === 'DISPATCHED' && (
+                        <button className="btn btn-sm btn-warning" onClick={() => onDispatch(o)}>✏️ Edit Dispatch</button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1939,6 +1945,9 @@ function TotalOrdersListModal({ orders, onClose, onView, onAccept, onDispatch })
                       {o.order_status === 'ACCEPTED' && (
                         <button className="btn btn-sm btn-success" onClick={() => onDispatch(o)}>🚛 Dispatch</button>
                       )}
+                      {o.order_status === 'DISPATCHED' && (
+                        <button className="btn btn-sm btn-warning" onClick={() => onDispatch(o)}>✏️ Edit Dispatch</button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -2015,6 +2024,11 @@ function TotalDealerOrdersModal({ orders, dealerId, onClose, onBack, onView, onA
                       {order.order_status === 'ACCEPTED' && (
                         <button className="btn btn-sm btn-success" onClick={() => onDispatch(order)}>
                           🚛 Dispatch
+                        </button>
+                      )}
+                      {order.order_status === 'DISPATCHED' && (
+                        <button className="btn btn-sm btn-warning" onClick={() => onDispatch(order)}>
+                          ✏️ Edit Dispatch
                         </button>
                       )}
                     </div>
@@ -2282,7 +2296,7 @@ function App() {
     const data = [];
     orders.forEach(o => {
       // Determine real-time status: use dispatch_status if dispatched, otherwise use order_status
-      const realStatus = o.order_status === 'DISPATCHED' && o.dispatch_status ? o.dispatch_status : o.order_status;
+      const realStatus = (o.order_status === 'DISPATCHED' && o.dispatch_status ? o.dispatch_status : o.order_status).toLowerCase();
       const deliveryLocation = o.preferred_location_desc || o.preferred_location_code || '';
       const items = o.items && Array.isArray(o.items) ? o.items : [];
 
@@ -2290,7 +2304,8 @@ function App() {
         items.forEach(item => {
           data.push({
             'Order Id': o.order_id,
-            'Dealer': o.dealer_name || o.dealer_company_name || '',
+            'Dealer Name': o.dealer_name || o.dealer_login_name || '',
+            'Dealer Company Name': o.dealer_company_name || '',
             'Product': item.product_name || '',
             'Status': realStatus,
             'Order Date': fmt(o.order_date),
@@ -2299,13 +2314,14 @@ function App() {
             'Dispatch Date': o.dispatch_created_at ? fmt(o.dispatch_created_at) : '',
             'Dispatch Bags': item.order_dispatch_bags || '',
             'Dispatch Qty': item.order_dispatch_quantity || '',
+            'Dispatch Notes': item.order_dispatch_comments || '',
             'Delivery Location': deliveryLocation,
             'Vehicle No': o.dispatch_vehicle_number || o.vehicle_number_on_order || '',
             'Driver Name': o.dispatch_driver_name || o.driver_name_on_order || '',
             'Driver Phone': o.dispatch_driver_phone || o.driver_phone_on_order || '',
             'Bilty No': o.bilty_number || '',
             'Remarks': o.remarks || '',
-            'Party': o.party_company_name || o.party_name_col || '',
+            'Party': o.party_name || o.party_company_name || o.party_name_col || '',
             'Address': o.party_address || '',
             'Load Type': o.load_type_desc || o.load_type_code || '',
             'Preferred Location': o.preferred_location_desc || o.preferred_location_code || '',
@@ -2315,22 +2331,24 @@ function App() {
       } else {
         data.push({
           'Order Id': o.order_id,
-          'Dealer': o.dealer_name || o.dealer_company_name || '',
+          'Dealer Name': o.dealer_name || o.dealer_login_name || '',
+          'Dealer Company Name': o.dealer_company_name || '',
           'Product': o.product_name || '',
           'Status': realStatus,
           'Order Date': fmt(o.order_date),
-          'Order Bags': '',
+          'Order Bags': o.order_bags || '',
           'Order Qty': o.order_quantity || '',
           'Dispatch Date': o.dispatch_created_at ? fmt(o.dispatch_created_at) : '',
-          'Dispatch Bags': '',
-          'Dispatch Qty': '',
+          'Dispatch Bags': o.order_dispatch_bags || '',
+          'Dispatch Qty': o.order_dispatch_quantity || '',
+          'Dispatch Notes': o.order_dispatch_comments || '',
           'Delivery Location': deliveryLocation,
           'Vehicle No': o.dispatch_vehicle_number || o.vehicle_number_on_order || '',
           'Driver Name': o.dispatch_driver_name || o.driver_name_on_order || '',
           'Driver Phone': o.dispatch_driver_phone || o.driver_phone_on_order || '',
           'Bilty No': o.bilty_number || '',
           'Remarks': o.remarks || '',
-          'Party': o.party_company_name || o.party_name_col || '',
+          'Party': o.party_name || o.party_company_name || o.party_name_col || '',
           'Address': o.party_address || '',
           'Load Type': o.load_type_desc || o.load_type_code || '',
           'Preferred Location': o.preferred_location_desc || o.preferred_location_code || '',

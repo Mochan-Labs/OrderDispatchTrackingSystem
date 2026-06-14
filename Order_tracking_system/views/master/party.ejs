@@ -17,6 +17,7 @@ const { useState, useEffect } = React;
 const EMPTY = { dealer_code:'', party_code:'', party_company_name:'', party_name:'', party_address:'', party_phone:'', party_email:'', party_is_active_flag:true };
 
 const validatePhone=(val)=>val.replace(/[^0-9]/g,'').slice(0,10);
+const isValidPhone=(val)=>/^\d{10}$/.test(val.replace(/[^0-9]/g,''));
 
 function Toast({msg,type,onClose}){
   if(!msg) return null;
@@ -70,6 +71,9 @@ function App(){
     e.preventDefault();
     setSaving(true);
     try{
+      if(form.party_phone && !isValidPhone(form.party_phone)){
+        throw new Error('Party phone number must be exactly 10 digits.');
+      }
       const res=await fetch(editId?`/api/party/${editId}`:'/api/party',{
         method:editId?'PUT':'POST',
         headers:{'Content-Type':'application/json'},
@@ -204,7 +208,7 @@ function App(){
                 </div>
                 <div className="col-md-6">
                   <label className="form-label fw-semibold">Phone <span className="text-muted fw-normal small">(10 digits only)</span></label>
-                  <input className="form-control" type="tel" value={form.party_phone} onChange={e=>setForm({...form,party_phone:validatePhone(e.target.value)})} pattern="[0-9]{10}" placeholder="10-digit number"/>
+                  <input className="form-control" type="tel" value={form.party_phone} onChange={e=>setForm({...form,party_phone:validatePhone(e.target.value)})} pattern="[0-9]{10}" placeholder="10-digit number" title="Party phone must be exactly 10 digits (0-9 only)"/>
                 </div>
                 <div className="col-md-6">
                   <label className="form-label fw-semibold">Email</label>

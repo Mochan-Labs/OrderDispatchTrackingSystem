@@ -15,7 +15,7 @@
         <form id="trackForm" class="d-grid gap-3">
           <div>
             <label class="form-label fw-semibold">Driver Mobile Number <span class="text-danger">*</span> <span class="text-muted fw-normal small">(10 digits only)</span></label>
-            <input id="driverPhone" type="tel" class="form-control" placeholder="10-digit number" value="<%= defaultDriverPhone %>" maxlength="10" pattern="[0-9]{10}" required />
+            <input id="driverPhone" type="tel" class="form-control" placeholder="10-digit number" value="<%= defaultDriverPhone %>" maxlength="10" pattern="[0-9]{10}" title="Driver phone must be exactly 10 digits (0-9 only)" required />
           </div>
           <div>
             <label class="form-label fw-semibold">Order ID (optional)</label>
@@ -32,7 +32,7 @@
         <p class="text-muted small mb-2">Generate a link the driver opens on their phone to start sharing GPS.</p>
         <div class="input-group input-group-sm mb-2">
           <span class="input-group-text">Mobile</span>
-          <input id="shareMobile" type="tel" class="form-control" placeholder="10-digit number" maxlength="10" pattern="[0-9]{10}"/>
+          <input id="shareMobile" type="tel" class="form-control" placeholder="10-digit number" maxlength="10" pattern="[0-9]{10}" title="Mobile number must be exactly 10 digits (0-9 only)"/>
         </div>
         <div class="input-group input-group-sm mb-2">
           <span class="input-group-text">Order</span>
@@ -296,6 +296,10 @@
   function generateDriverLink() {
     const mobile = document.getElementById('shareMobile').value.trim();
     if (!mobile) { alert('Please enter the driver mobile number.'); return; }
+    if (!/^\d{10}$/.test(mobile.replace(/[^0-9]/g, ''))) {
+      alert('Mobile number must be exactly 10 digits.');
+      return;
+    }
     const order = document.getElementById('shareOrder').value.trim();
     const vehicle = document.getElementById('shareVehicle').value.trim();
     const link = `${location.origin}/driver/track?phone=${encodeURIComponent(mobile)}`
@@ -317,6 +321,10 @@
     const driverPhone = document.getElementById('driverPhone').value.trim();
     const orderId = document.getElementById('orderId').value.trim();
     if (!driverPhone) return;
+    if (!/^\d{10}$/.test(driverPhone.replace(/[^0-9]/g, ''))) {
+      document.getElementById('errorMsg').textContent = 'Driver phone number must be exactly 10 digits.';
+      return;
+    }
 
     await loadOrderByDriver(driverPhone, orderId);
     watchDriver(driverPhone);

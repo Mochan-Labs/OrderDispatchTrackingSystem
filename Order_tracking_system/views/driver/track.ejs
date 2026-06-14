@@ -40,7 +40,7 @@
         <div class="mb-3">
           <label class="form-label small fw-semibold">Mobile Number <span class="text-danger">*</span> <span class="text-muted fw-normal">(10 digits only)</span></label>
           <input id="phoneInput" class="form-control" type="tel" placeholder="10-digit number"
-                 value="<%= defaultPhone %>" maxlength="10" pattern="[0-9]{10}" />
+                 value="<%= defaultPhone %>" maxlength="10" pattern="[0-9]{10}" title="Mobile number must be exactly 10 digits (0-9 only)" />
         </div>
         <div class="mb-3">
           <label class="form-label small fw-semibold">Order ID</label>
@@ -224,6 +224,7 @@
     clearError();
     const phone = document.getElementById('phoneInput').value.trim();
     if (!phone) { showError('Please enter your mobile number.'); return; }
+    if (!/^\d{10}$/.test(phone.replace(/[^0-9]/g, ''))) { showError('Mobile number must be exactly 10 digits.'); return; }
     if (!navigator.geolocation) { showError('Geolocation is not supported by this browser.'); return; }
 
     toggleBtn.disabled = true;

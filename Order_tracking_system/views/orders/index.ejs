@@ -56,6 +56,7 @@ const STATUS_CONFIG = {
 };
 
 const validatePhone=(val)=>val.replace(/[^0-9]/g,'').slice(0,10);
+const isValidPhone=(val)=>/^\d{10}$/.test(val.replace(/[^0-9]/g,''));
 
 
 function formatDateTime(value) {
@@ -595,7 +596,7 @@ function DispatchModal({ order, onClose, onRefresh }) {
               </div>
               <div className="col-md-6">
                 <label className="form-label fw-semibold">Driver Phone <span className="text-danger">*</span></label>
-                <input type="tel" className="form-control" placeholder="10-digit" value={form.driver_phone} onChange={e => set('driver_phone', e.target.value.replace(/[^0-9]/g, '').slice(0, 10))} />
+                <input type="tel" className="form-control" placeholder="10-digit" value={form.driver_phone} onChange={e => set('driver_phone', e.target.value.replace(/[^0-9]/g, '').slice(0, 10))} title="Driver phone must be exactly 10 digits (0-9 only)" />
               </div>
               <div className="col-md-6">
                 <label className="form-label fw-semibold">Bilty Number <span className="text-danger">*</span></label>
@@ -984,6 +985,7 @@ function CreateForDealerModal({ onClose, onSaved, repeatFrom }) {
                   placeholder="10-digit number"
                   maxLength="10"
                   pattern="[0-9]{10}"
+                  title="Contact number must be exactly 10 digits (0-9 only)"
                 />
               </div>
 
@@ -1047,7 +1049,7 @@ function CreateForDealerModal({ onClose, onSaved, repeatFrom }) {
                     <div className="col-md-4">
                       <label className="form-label fw-semibold small">Driver Phone <span className="text-muted fw-normal">(10 digits only)</span></label>
                       <input type="tel" className="form-control" placeholder="10-digit number"
-                        value={driverPhone} onChange={e => setDriverPhone(validatePhone(e.target.value))} maxLength="10" pattern="[0-9]{10}" />
+                        value={driverPhone} onChange={e => setDriverPhone(validatePhone(e.target.value))} maxLength="10" pattern="[0-9]{10}" title="Driver phone must be exactly 10 digits (0-9 only)" />
                     </div>
                     <div className="col-md-4">
                       <label className="form-label fw-semibold small">Vehicle Number</label>
@@ -1445,14 +1447,15 @@ function App() {
     const data = [];
     filtered.forEach(o => {
       // Determine real-time status: use dispatch_status if dispatched, otherwise use order_status
-      const realStatus = o.order_status === 'DISPATCHED' && o.dispatch_status ? o.dispatch_status : o.order_status;
+      const realStatus = (o.order_status === 'DISPATCHED' && o.dispatch_status ? o.dispatch_status : o.order_status).toLowerCase();
 
       // If order has items, export each item as a separate row
       if (o.items && o.items.length > 0) {
         o.items.forEach(item => {
           data.push({
             'Order Id': o.order_id,
-            'Dealer': o.dealer_name || '',
+            'Dealer Name': o.dealer_name || '',
+            'Dealer Company Name': o.dealer_company_name || '',
             'Product': item.product_name || '',
             'Status': realStatus,
             'Order Date': formatDateTime(o.order_date),
@@ -1461,6 +1464,7 @@ function App() {
             'Dispatch Date': o.dispatch_created_at ? formatDateTime(o.dispatch_created_at) : '',
             'Dispatch Bags': item.order_dispatch_bags || '',
             'Dispatch Qty': item.order_dispatch_quantity || '',
+            'Dispatch Notes': item.order_dispatch_comments || '',
             'Delivery Location': o.delivery_location || '',
             'Vehicle No': o.dispatch_vehicle_number || '',
             'Driver Name': o.dispatch_driver_name || '',
@@ -1478,15 +1482,17 @@ function App() {
         // Fallback for orders without items
         data.push({
           'Order Id': o.order_id,
-          'Dealer': o.dealer_name || '',
+          'Dealer Name': o.dealer_name || '',
+          'Dealer Company Name': o.dealer_company_name || '',
           'Product': o.product_name || '',
           'Status': realStatus,
           'Order Date': formatDateTime(o.order_date),
-          'Order Bags': '',
+          'Order Bags': o.order_bags || '',
           'Order Qty': `${o.quantity} ${o.unit}`,
           'Dispatch Date': o.dispatch_created_at ? formatDateTime(o.dispatch_created_at) : '',
-          'Dispatch Bags': '',
-          'Dispatch Qty': '',
+          'Dispatch Bags': o.order_dispatch_bags || '',
+          'Dispatch Qty': o.order_dispatch_quantity || '',
+          'Dispatch Notes': o.order_dispatch_comments || '',
           'Delivery Location': o.delivery_location || '',
           'Vehicle No': o.dispatch_vehicle_number || '',
           'Driver Name': o.dispatch_driver_name || '',
@@ -1822,133 +1828,94 @@ function App() {
                           <span className="text-muted small">—</span>
                         )}
                       </td>}
-                      <td className="text-nowrap">
-                        <button className="btn btn-sm btn-outline-primary me-1" onClick={() => setViewOrder(o)}>
-                          👁️ View
-                        </button>
-                        {!IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
-                          <>
+                      <td className="text-nowrap" style={{ fontSize: '0.85rem' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                          {/* View Button */}
+                          <button className="btn btn-sm btn-outline-primary me-1" onClick={() => setViewOrder(o)}>
+                            👁️ View
+                          </button>
+
+                          {/* Dealer: Hold on ORDER_PLACED */}
+                          {!IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
                             <button className="btn btn-sm btn-outline-secondary me-1" onClick={() => setHoldOrder(o)}>
                               ⏸️ Hold
                             </button>
+                          )}
+
+                          {/* Dealer: Edit on ORDER_PLACED */}
+                          {!IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
                             <button className="btn btn-sm btn-outline-info me-1" onClick={() => window.location.href=`/orders?action=edit&id=${o.order_id}`}>
                               ✏️ Edit
                             </button>
-                          </>
-                        )}
-                        {!IS_ADMIN && o.order_status === 'ON_HOLD' && o.on_hold_by_role === 'DEALER' && (
-                          <button className="btn btn-sm btn-outline-warning me-1" onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>
-                            ⏸️ Unhold
-                          </button>
-                        )}
-                        {IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
-                          <>
-                            <button className="btn btn-sm btn-outline-info me-1" onClick={() => changeStatus(o.order_id, 'ACCEPTED')}>
-                              ✅ Accept
-                            </button>
-                            <button className="btn btn-sm btn-outline-secondary me-1" onClick={() => setHoldOrder(o)}>
-                              ⏸️ Hold
-                            </button>
-                          </>
-                        )}
-                        {IS_ADMIN && o.order_status === 'ACCEPTED' && (
-                          <button className="btn btn-sm btn-success me-1" onClick={() => changeStatus(o.order_id, 'DISPATCHED')}>
-                            🚛 Dispatch
-                          </button>
-                        )}
-                        {IS_ADMIN_OR_OFFICE && (o.order_status === 'ACCEPTED' || o.order_status === 'DISPATCHED') && (
-                          <button className="btn btn-sm btn-warning me-1" onClick={() => setSelectedOrder(o)}>
-                            ✏️ Edit Dispatch
-                          </button>
-                        )}
-                        {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && o.on_hold_by_role !== 'DEALER' && (
-                          <button className="btn btn-sm btn-outline-warning me-1" onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>
-                            ⏸️ Unhold
-                          </button>
-                        )}
-                        {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && o.on_hold_by_role === 'DEALER' && (
-                          <span className="badge bg-secondary" style={{ lineHeight: '1.5' }}>🔒 Hold</span>
-                        )}
-                        {!IS_ADMIN && (o.order_status === 'ACCEPTED' || o.order_status === 'DISPATCHED') && (
-                          <span className="badge bg-secondary" style={{ lineHeight: '1.5' }}>🔒 Locked</span>
-                        )}
-                        {!IS_ADMIN_OR_OFFICE && (
-                          <a className="btn btn-sm btn-outline-primary me-1" href={`/orders?action=new&repeat=${o.order_id}`}>
-                            🔁 Repeat
-                          </a>
-                        )}
-                        {IS_ADMIN_OR_OFFICE && (
-                          <button className="btn btn-sm btn-outline-primary me-1" onClick={() => setRepeatOrder(o)}>
-                            🔁 Repeat
-                          </button>
-                        )}
-                        {IS_ADMIN && o.order_status !== 'CANCELLED' && (
-                          <button className="btn btn-sm btn-outline-danger ms-1" onClick={() => cancelOrder(o.order_id)}>
-                            ❌ Cancel
-                          </button>
-                        )}
-
-                        {/* MOBILE: Same button layout */}
-                        <div className="d-md-none" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          <button className="btn btn-sm btn-outline-primary me-1" onClick={() => setSelectedOrder(o)}>
-                            👁️ View
-                          </button>
-                          {!IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
-                            <>
-                              <button className="btn btn-sm btn-outline-secondary me-1" onClick={() => setHoldOrder(o)}>
-                                ⏸️ Hold
-                              </button>
-                              <button className="btn btn-sm btn-outline-info me-1" onClick={() => window.location.href=`/orders?action=edit&id=${o.order_id}`}>
-                                ✏️ Edit
-                              </button>
-                            </>
                           )}
+
+                          {/* Dealer: Unhold on ON_HOLD (dealer held) */}
                           {!IS_ADMIN && o.order_status === 'ON_HOLD' && o.on_hold_by_role === 'DEALER' && (
                             <button className="btn btn-sm btn-outline-warning me-1" onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>
                               ⏸️ Unhold
                             </button>
                           )}
+
+                          {/* Admin: Accept on ORDER_PLACED */}
                           {IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
-                            <>
-                              <button className="btn btn-sm btn-outline-info me-1" onClick={() => changeStatus(o.order_id, 'ACCEPTED')}>
-                                ✅ Accept
-                              </button>
-                              <button className="btn btn-sm btn-outline-secondary me-1" onClick={() => setHoldOrder(o)}>
-                                ⏸️ Hold
-                              </button>
-                            </>
+                            <button className="btn btn-sm btn-outline-info me-1" onClick={() => changeStatus(o.order_id, 'ACCEPTED')}>
+                              ✅ Accept
+                            </button>
                           )}
+
+                          {/* Admin: Hold on ORDER_PLACED */}
+                          {IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
+                            <button className="btn btn-sm btn-outline-secondary me-1" onClick={() => setHoldOrder(o)}>
+                              ⏸️ Hold
+                            </button>
+                          )}
+
+                          {/* Admin: Dispatch on ACCEPTED */}
                           {IS_ADMIN && o.order_status === 'ACCEPTED' && (
                             <button className="btn btn-sm btn-success me-1" onClick={() => changeStatus(o.order_id, 'DISPATCHED')}>
                               🚛 Dispatch
                             </button>
                           )}
+
+                          {/* Admin/Office: Edit Dispatch on ACCEPTED or DISPATCHED */}
                           {IS_ADMIN_OR_OFFICE && (o.order_status === 'ACCEPTED' || o.order_status === 'DISPATCHED') && (
-                            <button className="btn btn-sm btn-outline-info me-1" onClick={() => setSelectedOrder(o)}>
+                            <button className="btn btn-sm btn-warning me-1" onClick={() => setSelectedOrder(o)}>
                               ✏️ Edit Dispatch
                             </button>
                           )}
+
+                          {/* Admin/Office: Unhold on ON_HOLD (admin/office held) */}
                           {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && o.on_hold_by_role !== 'DEALER' && (
                             <button className="btn btn-sm btn-outline-warning me-1" onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>
                               ⏸️ Unhold
                             </button>
                           )}
+
+                          {/* Hold Badge for Admin/Office held orders */}
                           {IS_ADMIN_OR_OFFICE && o.order_status === 'ON_HOLD' && o.on_hold_by_role === 'DEALER' && (
                             <span className="badge bg-secondary" style={{ lineHeight: '1.5' }}>🔒 Hold</span>
                           )}
+
+                          {/* Locked Badge for dealer on ACCEPTED/DISPATCHED */}
                           {!IS_ADMIN && (o.order_status === 'ACCEPTED' || o.order_status === 'DISPATCHED') && (
                             <span className="badge bg-secondary" style={{ lineHeight: '1.5' }}>🔒 Locked</span>
                           )}
+
+                          {/* Repeat Button - Dealer */}
                           {!IS_ADMIN_OR_OFFICE && (
                             <a className="btn btn-sm btn-outline-primary me-1" href={`/orders?action=new&repeat=${o.order_id}`}>
                               🔁 Repeat
                             </a>
                           )}
+
+                          {/* Repeat Button - Admin/Office */}
                           {IS_ADMIN_OR_OFFICE && (
                             <button className="btn btn-sm btn-outline-primary me-1" onClick={() => setRepeatOrder(o)}>
                               🔁 Repeat
                             </button>
                           )}
+
+                          {/* Cancel Button - Admin only */}
                           {IS_ADMIN && o.order_status !== 'CANCELLED' && (
                             <button className="btn btn-sm btn-outline-danger ms-1" onClick={() => cancelOrder(o.order_id)}>
                               ❌ Cancel
