@@ -404,20 +404,31 @@ function DispatchModal({ order, onClose, onRefresh }) {
           throw new Error(`Upload failed: ${s3UploadRes.status}`);
         }
 
+        // Try to get a read presigned URL, but fall back to the upload URL if it fails
         const s3Key_extracted = presignedUrl.split('/receipts/')[1]?.split('?')[0];
         if (s3Key_extracted) {
-          const readUrlRes = await fetch('/api/dispatcher/presigned-read-url', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ s3Key: `receipts/${s3Key_extracted}` })
-          });
+          try {
+            const readUrlRes = await fetch('/api/dispatcher/presigned-read-url', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ s3Key: `receipts/${s3Key_extracted}` })
+            });
 
-          if (readUrlRes.ok) {
-            const readResult = await readUrlRes.json();
-            s3Url = readResult.url;
-          } else {
-            throw new Error('Failed to generate read URL');
+            if (readUrlRes.ok) {
+              const readResult = await readUrlRes.json();
+              s3Url = readResult.url;
+            } else {
+              // Fallback: use the original presigned URL if read URL generation fails
+              console.warn('Read presigned URL generation failed, using upload URL as fallback');
+              s3Url = presignedUrl;
+            }
+          } catch (err) {
+            console.warn('Error generating read presigned URL:', err.message, 'using upload URL');
+            s3Url = presignedUrl;
           }
+        } else {
+          console.warn('S3 key extraction failed, using upload URL directly');
+          s3Url = presignedUrl;
         }
       }
 
