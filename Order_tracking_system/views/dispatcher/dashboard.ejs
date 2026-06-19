@@ -573,7 +573,7 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
                         <tr>
                           <td>{order.product_name || '—'}</td>
                           <td>—</td>
-                          <td>{parseFloat(order.order_quantity || 0).toFixed(3)}</td>
+                          <td>{parseFloat(order.quantity || 0).toFixed(3)}</td>
                           <td style={{ background: '#f5f5f5' }}>
                             <input
                               type="number"
