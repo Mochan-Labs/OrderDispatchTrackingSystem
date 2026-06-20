@@ -38,10 +38,13 @@ function ensureDealer(req, res, next) {
 }
 
 const VALID_TRANSITIONS = {
-  ORDER_PLACED: ['ACCEPTED', 'ON_HOLD'],
-  ACCEPTED:     ['DISPATCHED'],
-  DISPATCHED:   [],
-  ON_HOLD:      ['ORDER_PLACED'],
+  ORDER_PLACED:         ['ACCEPTED', 'ON_HOLD'],
+  ACCEPTED:             ['ON_HOLD', 'DISPATCHED'],
+  ON_HOLD:              ['ACCEPTED', 'DISPATCHED'],
+  DISPATCHED:           ['FULLY_DISPATCHED', 'PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD'],
+  FULLY_DISPATCHED:     ['DISPATCH_ON_HOLD'],
+  PARTIALLY_DISPATCHED: ['FULLY_DISPATCHED', 'DISPATCH_ON_HOLD'],
+  DISPATCH_ON_HOLD:     ['FULLY_DISPATCHED', 'PARTIALLY_DISPATCHED'],
 };
 
 // Dispatcher can cancel orders from any status at any time
@@ -101,7 +104,6 @@ function toOrderShape(row) {
     on_hold_reason:          row.on_hold_reason || null,
     on_hold_by_role:         row.on_hold_by_role || null,
     order_date:              row.order_date,
-    dispatch_status:         row.dispatch_status || null,
     dispatch:                null,
   };
   if (row.dispatch_id) {
@@ -114,7 +116,6 @@ function toOrderShape(row) {
       actual_loading_location_code:  row.actual_loading_location_code || null,
       actual_loading_location_desc:  row.actual_loading_location_desc || row.actual_loading_location_code || null,
       dispatch_date:                 row.dispatch_created_at || null,
-      dispatch_status:               row.dispatch_status || null,
       expected_delivery:             null,
       actual_delivery:               null,
       image_url:                     row.image_url || null,
@@ -131,7 +132,6 @@ function toOrderShape(row) {
     order.actual_loading_location_code = row.actual_loading_location_code || null;
     order.actual_loading_location_desc = row.actual_loading_location_desc || row.actual_loading_location_code || null;
     order.dispatch_created_at = row.dispatch_created_at || null;
-    order.dispatch_status = row.dispatch_status || null;
   }
   return order;
 }
@@ -254,7 +254,7 @@ async function fetchOrders({ dealerId, startDate, endDate }) {
            pl.warehouse_name  AS preferred_location_desc,
            al.warehouse_name  AS actual_loading_location_desc,
            od.dispatch_id, od.dispatch_vehicle_number, od.driver_name AS dispatch_driver_name, od.driver_phone AS dispatch_driver_phone,
-           od.bilty_number, od.actual_loading_location_code, od.created_at AS dispatch_created_at, od.dispatch_status,
+           od.bilty_number, od.actual_loading_location_code, od.created_at AS dispatch_created_at,
            od.image_url, od.image_type, od.image_original_size, od.image_compressed_size, od.image_uploaded_at,
            ${ITEMS_SUBQUERY}
     FROM odts.dealer_orders o

@@ -37,13 +37,13 @@
 const { useState, useEffect, useCallback, useRef } = React;
 
 const STATUS_CONFIG = {
-  ORDER_PLACED:       { text: 'Order Placed',           icon: '🕐', bg: '#fd7e14', tc: '#fff' },
-  ACCEPTED:           { text: 'Accepted',               icon: '✅', bg: '#0dcaf0', tc: '#000' },
-  DISPATCHED:         { text: 'Dispatched',             icon: '📦', bg: '#198754', tc: '#fff' },
-  ON_HOLD:            { text: 'On Hold',                icon: '⏸️', bg: '#e57373', tc: '#fff' },
-  dispatch_completed: { text: 'Fully Dispatched',       icon: '✅', bg: '#198754', tc: '#fff' },
-  dispatch_partial:   { text: 'Partially Dispatched',   icon: '📦', bg: '#fd7e14', tc: '#fff' },
-  dispatch_onhold:    { text: 'Dispatch on Hold',       icon: '⏸️', bg: '#e57373', tc: '#fff' },
+  ORDER_PLACED:          { text: 'Order Placed',           icon: '🕐', bg: '#fd7e14', tc: '#fff' },
+  ACCEPTED:              { text: 'Accepted',               icon: '✅', bg: '#0dcaf0', tc: '#000' },
+  ON_HOLD:               { text: 'On Hold',                icon: '⏸️', bg: '#e57373', tc: '#fff' },
+  FULLY_DISPATCHED:      { text: 'Fully Dispatched',       icon: '✅', bg: '#198754', tc: '#fff' },
+  PARTIALLY_DISPATCHED:  { text: 'Partially Dispatched',   icon: '📦', bg: '#fd7e14', tc: '#fff' },
+  DISPATCH_ON_HOLD:      { text: 'Dispatch on Hold',       icon: '⏸️', bg: '#e57373', tc: '#fff' },
+  CANCELLED:             { text: 'Cancelled',              icon: '❌', bg: '#6c757d', tc: '#fff' },
 };
 
 const validatePhone=(val)=>val.replace(/[^0-9]/g,'').slice(0,10);
@@ -59,10 +59,8 @@ function fmt(value) {
   }).format(dt);
 }
 
-function StatusBadge({ status, dispatchStatus }) {
-  // Use dispatch_status if available (for dispatched orders), otherwise use order_status
-  const displayStatus = dispatchStatus || status;
-  const cfg = STATUS_CONFIG[displayStatus] || { bg: '#6c757d', tc: '#fff', text: displayStatus, icon: '' };
+function StatusBadge({ status }) {
+  const cfg = STATUS_CONFIG[status] || { bg: '#6c757d', tc: '#fff', text: status, icon: '' };
   return (
     <span className="badge" style={{ background: cfg.bg, color: cfg.tc }}>
       {cfg.icon} {cfg.text}
@@ -155,9 +153,10 @@ async function handleDownloadReceipt(imageUrl, orderId) {
 }
 
 function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onRefresh }) {
-  // isExistingDispatch: order is already DISPATCHED (only edit quantities)
+  // isExistingDispatch: order is already in dispatch state (only edit quantities)
+  // Includes: DISPATCHED, PARTIALLY_DISPATCHED, DISPATCH_ON_HOLD
   // isInitialDispatch: order not yet dispatched (fill in all dispatch details + quantities)
-  const isExistingDispatch = order.order_status === 'DISPATCHED' || !!order.dispatch_vehicle_number;
+  const isExistingDispatch = ['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(order.order_status) || !!order.dispatch_vehicle_number;
   const items = parseItems(order);
   const totalOrderBags = items.reduce((s, i) => s + (parseInt(i.order_bags || 0)), 0);
   const totalOrderQty = items.reduce((s, i) => s + parseFloat(i.order_quantity || 0), 0);
@@ -497,7 +496,7 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to update dispatch quantities');
 
-        notify(`✅ Dispatch updated to ${data.dispatch_status} status`);
+        notify(`✅ Dispatch updated to ${data.order_status} status`);
         setSaving(false);
         onClose();
         // Refresh orders list to show updated status
@@ -1236,7 +1235,7 @@ function ViewOrderModal({ order, onClose, onBack }) {
               <div className="col-md-4">
                 <div className="p-3 bg-light rounded">
                   <div className="text-muted small">Status</div>
-                  <div><StatusBadge status={order.order_status} dispatchStatus={order.dispatch_status} /></div>
+                  <div><StatusBadge status={order.order_status} /></div>
                 </div>
               </div>
               <div className="col-12">
@@ -1521,7 +1520,7 @@ function DealerOrdersModal({ orders, dealerId, onClose, onBack, onAccept, onDisp
                         <div className="fw-semibold">Order #{order.order_id}</div>
                         <small className="text-muted">{fmt(order.order_date)}</small>
                       </div>
-                      <StatusBadge status={order.order_status} dispatchStatus={order.dispatch_status} />
+                      <StatusBadge status={order.order_status} />
                     </div>
                     <div className="row g-2 small mb-3">
                       <div className="col-6 col-sm-3">
@@ -1581,7 +1580,8 @@ function DealerOrdersModal({ orders, dealerId, onClose, onBack, onAccept, onDisp
 }
 
 function DispatchedDealersModal({ orders, onSelectDealer, onClose }) {
-  const dispatchedOrders = orders.filter(o => o.order_status === 'DISPATCHED');
+  // Include all dispatch-related statuses (not FULLY_DISPATCHED as those are complete)
+  const dispatchedOrders = orders.filter(o => ['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(o.order_status));
   const dealerMap = {};
 
   dispatchedOrders.forEach(o => {
@@ -1641,7 +1641,7 @@ function DispatchedDealersModal({ orders, onSelectDealer, onClose }) {
 
 function DealerDispatchedOrdersModal({ orders, dealerId, onClose, onBack, onView, onDispatch }) {
   const dispatchedOrders = orders
-    .filter(o => o.dealer_id === dealerId && o.order_status === 'DISPATCHED')
+    .filter(o => o.dealer_id === dealerId && ['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(o.order_status))
     .sort((a, b) => new Date(b.dispatch_created_at) - new Date(a.dispatch_created_at));
 
   const dealerName = dispatchedOrders[0]?.dealer_login_name || dispatchedOrders[0]?.dealer_company_name || dispatchedOrders[0]?.dealer_name || `Dealer #${dealerId}`;
@@ -1673,7 +1673,7 @@ function DealerDispatchedOrdersModal({ orders, dealerId, onClose, onBack, onView
                         <div className="fw-semibold">Order #{order.order_id}</div>
                         <small className="text-muted">Dispatched: {fmt(order.dispatch_created_at)}</small>
                       </div>
-                      <StatusBadge status={order.order_status} dispatchStatus={order.dispatch_status} />
+                      <StatusBadge status={order.order_status} />
                     </div>
                     <div className="row g-2 small mb-3">
                       <div className="col-6 col-sm-2">
@@ -1773,7 +1773,7 @@ function OrderRow({ order, onAccept, onDispatch, onView, isOrderOverdue }) {
           <span className="text-muted small">—</span>
         )}
       </td>
-      <td><StatusBadge status={order.order_status} dispatchStatus={order.dispatch_status} /></td>
+      <td><StatusBadge status={order.order_status} /></td>
       <td className="text-nowrap">
         <button className="btn btn-sm btn-outline-primary me-1" onClick={() => onView(order)}>
           👁️ View
@@ -1790,7 +1790,7 @@ function OrderRow({ order, onAccept, onDispatch, onView, isOrderOverdue }) {
             🚛 Dispatch
           </button>
         )}
-        {order.order_status === 'DISPATCHED' && (
+        {['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(order.order_status) && (
           <>
             <button className="btn btn-sm btn-warning me-1" onClick={() => onDispatch(order)}>
               ✏️ Edit Dispatch
@@ -1883,7 +1883,7 @@ function OverdueOrdersModal({ orders, dealerId, onClose, onBack, onView, onAccep
                         <div className="fw-semibold">Order #{o.order_id}</div>
                         <small className="text-muted">{fmt(o.order_date)}</small>
                       </div>
-                      <StatusBadge status={o.order_status} dispatchStatus={o.dispatch_status} />
+                      <StatusBadge status={o.order_status} />
                     </div>
                     <div className="row g-2 small mb-2">
                       <div className="col-6">
@@ -1902,9 +1902,6 @@ function OverdueOrdersModal({ orders, dealerId, onClose, onBack, onView, onAccep
                       )}
                       {o.order_status === 'ACCEPTED' && (
                         <button className="btn btn-sm btn-success" onClick={() => onDispatch(o)}>🚛 Dispatch</button>
-                      )}
-                      {o.order_status === 'DISPATCHED' && (
-                        <button className="btn btn-sm btn-warning" onClick={() => onDispatch(o)}>✏️ Edit Dispatch</button>
                       )}
                     </div>
                   </div>
@@ -2001,9 +1998,6 @@ function TotalOrdersListModal({ orders, onClose, onView, onAccept, onDispatch })
                       {o.order_status === 'ACCEPTED' && (
                         <button className="btn btn-sm btn-success" onClick={() => onDispatch(o)}>🚛 Dispatch</button>
                       )}
-                      {o.order_status === 'DISPATCHED' && (
-                        <button className="btn btn-sm btn-warning" onClick={() => onDispatch(o)}>✏️ Edit Dispatch</button>
-                      )}
                     </div>
                   </div>
                 ))}
@@ -2043,7 +2037,7 @@ function TotalDealerOrdersModal({ orders, dealerId, onClose, onBack, onView, onA
                         <div className="fw-semibold">Order #{order.order_id}</div>
                         <small className="text-muted">{fmt(order.order_date)}</small>
                       </div>
-                      <StatusBadge status={order.order_status} dispatchStatus={order.dispatch_status} />
+                      <StatusBadge status={order.order_status} />
                     </div>
                     <div className="row g-2 small mb-3">
                       <div className="col-6 col-sm-3">
@@ -2082,7 +2076,7 @@ function TotalDealerOrdersModal({ orders, dealerId, onClose, onBack, onView, onA
                           🚛 Dispatch
                         </button>
                       )}
-                      {order.order_status === 'DISPATCHED' && (
+                      {['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(order.order_status) && (
                         <button className="btn btn-sm btn-warning" onClick={() => onDispatch(order)}>
                           ✏️ Edit Dispatch
                         </button>
@@ -2105,7 +2099,7 @@ function DealerGroup({ orders, onAccept, onDispatch, onView, isOrderOverdue }) {
   const placedCount    = orders.filter(o => o.order_status === 'ORDER_PLACED').length;
   const acceptedCount  = orders.filter(o => o.order_status === 'ACCEPTED').length;
   const onHoldCount    = orders.filter(o => o.order_status === 'ON_HOLD').length;
-  const dispatchedCount = orders.filter(o => o.order_status === 'DISPATCHED').length;
+  const dispatchedCount = orders.filter(o => ['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(o.order_status)).length;
 
   const first       = orders[0];
   const displayName = first.dealer_login_name || first.dealer_company_name || first.dealer_name || `Dealer #${first.dealer_id}`;
@@ -2217,7 +2211,7 @@ function App() {
   const notify = (msg, type = 'success') => setToast({ msg, type });
 
   const isOrderOverdue = (order) => {
-    if (order.order_status === 'DISPATCHED') return false; // Not overdue if dispatched
+    if (['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(order.order_status)) return false; // Not overdue if in dispatch state
     const orderDate = new Date(order.order_date);
     const now = new Date();
     const daysDiff = Math.floor((now - orderDate) / (1000 * 60 * 60 * 24));
@@ -2248,7 +2242,7 @@ function App() {
         dealer_login_name: o.dealer_login_name,
         dealer_company_name: o.dealer_company_name,
         total: 0,
-        byStatus: { ORDER_PLACED: 0, ACCEPTED: 0, DISPATCHED: 0, ON_HOLD: 0 }
+        byStatus: { ORDER_PLACED: 0, ACCEPTED: 0, ON_HOLD: 0 }
       };
     }
     dealerMap[o.dealer_id].byStatus[o.order_status] = (dealerMap[o.dealer_id].byStatus[o.order_status] || 0) + 1;
@@ -2257,7 +2251,12 @@ function App() {
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
-    const statuses = ['ORDER_PLACED', 'ACCEPTED', 'DISPATCHED'];
+    // Build status filter based on toggles
+    const statuses = ['ORDER_PLACED', 'ACCEPTED'];
+    if (showDispatched) {
+      // When toggle ON, include all dispatch-related statuses
+      statuses.push('PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED');
+    }
     if (showOnHold)     statuses.push('ON_HOLD');
     try {
       const params = new URLSearchParams();
@@ -2351,8 +2350,8 @@ function App() {
   const exportDispatcherExcel = () => {
     const data = [];
     orders.forEach(o => {
-      // Determine real-time status: use dispatch_status if dispatched, otherwise use order_status
-      const realStatus = (o.order_status === 'DISPATCHED' && o.dispatch_status ? o.dispatch_status : o.order_status).toLowerCase();
+      // Use order_status directly (now contains dispatch status too)
+      const realStatus = o.order_status.toLowerCase();
       const deliveryLocation = o.preferred_location_desc || o.preferred_location_code || '';
       const items = o.items && Array.isArray(o.items) ? o.items : [];
 
@@ -2439,7 +2438,7 @@ function App() {
   });
 
   const totalPending   = orders.filter(o => o.order_status === 'ORDER_PLACED' || o.order_status === 'ACCEPTED').length;
-  const totalDispatched = orders.filter(o => o.order_status === 'DISPATCHED').length;
+  const totalDispatched = orders.filter(o => ['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(o.order_status)).length;
   const totalDealers   = Object.keys(dealerGroups).length;
 
   return (

@@ -137,7 +137,6 @@ router.get('/api/dispatcher/orders', ensureDispatcher, async (req, res) => {
         od.bilty_number,
         od.actual_loading_location_code,
         al.warehouse_name  AS actual_location_desc,
-        od.dispatch_status,
         od.created_at AS dispatch_created_at,
         od.image_url,
         od.image_type,
@@ -350,7 +349,6 @@ router.post('/api/dispatcher/orders/:id/dispatch', ensureDispatcher, async (req,
                 image_original_size          = COALESCE($10, image_original_size),
                 image_compressed_size        = COALESCE($11, image_compressed_size),
                 image_uploaded_at            = CASE WHEN $8 IS NOT NULL THEN NOW() ELSE image_uploaded_at END,
-                dispatch_status              = COALESCE(dispatch_status, 'dispatch_onhold'),
                 updated_by                   = $6,
                 updated_at                   = NOW()
           WHERE dispatch_id = $7`,
@@ -365,12 +363,12 @@ router.post('/api/dispatcher/orders/:id/dispatch', ensureDispatcher, async (req,
            (order_id, dispatch_vehicle_number, driver_name, driver_phone,
             bilty_number, actual_loading_location_code, image_url, image_type,
             image_original_size, image_compressed_size, image_uploaded_at,
-            dispatch_status, created_by, updated_by, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13, NOW(), NOW())`,
+            created_by, updated_by, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, NOW(), NOW())`,
         [orderId, vehicleUpper, driver_name || null, driver_phone.trim(),
          bilty_number.trim(), actual_loading_location_code.trim(),
          image_url || null, image_type || null, image_original_size || null,
-         image_compressed_size || null, image_url ? 'NOW()' : null, 'dispatch_onhold', userId]
+         image_compressed_size || null, image_url ? 'NOW()' : null, userId]
       );
     }
 
@@ -470,7 +468,7 @@ router.patch('/api/dispatcher/orders/:id/dispatch-quantities', ensureDispatcher,
       console.log(`[Dispatcher] Order ${orderId} totals: total_order_bags=${total_order_bags}, total_dispatch_bags=${total_dispatch_bags}`);
       console.log(`[Dispatcher] Types: order_bags=${typeof total_order_bags}, dispatch_bags=${typeof total_dispatch_bags}`);
 
-      let dispatchStatus = 'dispatch_onhold';
+      let newOrderStatus = 'DISPATCH_ON_HOLD';
 
       console.log(`[Dispatcher] Condition check: ${total_dispatch_bags} === ${total_order_bags}? ${total_dispatch_bags === total_order_bags}`);
       console.log(`[Dispatcher] Condition check: ${total_dispatch_bags} > 0? ${total_dispatch_bags > 0}`);
@@ -478,29 +476,29 @@ router.patch('/api/dispatcher/orders/:id/dispatch-quantities', ensureDispatcher,
       console.log(`[Dispatcher] Condition check: ${total_dispatch_bags} > 0 && ${total_dispatch_bags} < ${total_order_bags}? ${total_dispatch_bags > 0 && total_dispatch_bags < total_order_bags}`);
 
       if (total_dispatch_bags === total_order_bags) {
-        dispatchStatus = 'dispatch_completed';
+        newOrderStatus = 'FULLY_DISPATCHED';
       } else if (total_dispatch_bags > 0 && total_dispatch_bags < total_order_bags) {
-        dispatchStatus = 'dispatch_partial';
+        newOrderStatus = 'PARTIALLY_DISPATCHED';
       }
 
-      console.log(`[Dispatcher] Setting dispatch_status to: ${dispatchStatus}`);
+      console.log(`[Dispatcher] Setting order_status to: ${newOrderStatus}`);
 
-      // Update dispatch status in order_dispatch
+      // Update order_status in dealer_orders to reflect dispatch status
       await client.query(
-        `UPDATE odts.order_dispatch
-         SET dispatch_status = $1, updated_by = $3, updated_at = NOW()
+        `UPDATE odts.dealer_orders
+         SET order_status = $1, updated_by = $3, updated_at = NOW()
          WHERE order_id = $2`,
-        [dispatchStatus, orderId, req.session.user.id]
+        [newOrderStatus, orderId, req.session.user.id]
       );
 
-      console.log(`[Dispatcher] Successfully updated order ${orderId} dispatch_status to: ${dispatchStatus}`);
+      console.log(`[Dispatcher] Successfully updated order ${orderId} order_status to: ${newOrderStatus}`);
 
       await client.query('COMMIT');
 
       res.json({
         success: true,
-        dispatch_status: dispatchStatus,
-        message: `Dispatch updated to ${dispatchStatus} status`
+        order_status: newOrderStatus,
+        message: `Dispatch updated to ${newOrderStatus} status`
       });
     } catch (e) {
       await client.query('ROLLBACK');
@@ -515,6 +513,7 @@ router.patch('/api/dispatcher/orders/:id/dispatch-quantities', ensureDispatcher,
 });
 
 // PATCH /api/dispatcher/orders/:id/dispatch — update dispatch details (vehicle, driver, bilty, location, receipt)
+// Falls back to POST behavior (create if not exists) for admin convenience
 router.patch('/api/dispatcher/orders/:id/dispatch', ensureDispatcher, async (req, res) => {
   try {
     const orderId = parseInt(req.params.id);
@@ -522,14 +521,39 @@ router.patch('/api/dispatcher/orders/:id/dispatch', ensureDispatcher, async (req
 
     console.log('[Dispatcher] Updating dispatch for order:', orderId, { vehicle_number, driver_name, driver_phone, bilty_number, actual_loading_location_code, image_url: image_url ? 'provided' : 'none' });
 
+    // Check if order exists
+    const orderCheck = await pool.query(
+      'SELECT order_id, order_status FROM odts.dealer_orders WHERE order_id = $1',
+      [orderId]
+    );
+
+    if (!orderCheck.rows.length) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
     // Check if dispatch record exists
     const existing = await pool.query(
       'SELECT dispatch_id FROM odts.order_dispatch WHERE order_id = $1',
       [orderId]
     );
 
+    // If dispatch doesn't exist, create it (allow admin to create dispatch via PATCH)
     if (!existing.rows.length) {
-      return res.status(404).json({ error: 'Dispatch record not found' });
+      const userId = req.session.user.id;
+      const dispatchInsert = await pool.query(
+        `INSERT INTO odts.order_dispatch (order_id, dispatch_vehicle_number, driver_name, driver_phone, bilty_number, actual_loading_location_code, image_url, image_type, image_original_size, image_compressed_size, created_by, updated_by, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
+         RETURNING dispatch_id`,
+        [orderId, vehicle_number?.trim().toUpperCase() || null, driver_name || null, driver_phone?.trim() || null, bilty_number?.trim() || null, actual_loading_location_code?.trim() || null, image_url || null, image_type || null, image_original_size || null, image_compressed_size || null, userId, userId]
+      );
+
+      // Update order status to DISPATCHED
+      await pool.query(
+        'UPDATE odts.dealer_orders SET order_status = $1, updated_at = NOW() WHERE order_id = $2',
+        ['DISPATCHED', orderId]
+      );
+
+      return res.status(201).json(dispatchInsert.rows[0]);
     }
 
     // Update order_dispatch record with non-null values only
