@@ -94,14 +94,14 @@ router.get('/api/locations', ensureAdminOrOffice, async (req, res) => {
     let sql, params;
     if (code_type) {
       if (hasUpdatedBy) {
-        sql = `SELECT ${sel}, u.user_login_name AS updated_by_user_login_name FROM odts.code_reference cr LEFT JOIN odts.users u ON cr.updated_by = u.user_id WHERE cr.code_type = $1 ORDER BY cr.code_type, cr.code`;
+        sql = `SELECT ${sel}, u.user_login_name AS updated_by_user_login_name FROM odts.code_reference cr LEFT JOIN odts.user_master u ON cr.updated_by = u.user_id WHERE cr.code_type = $1 ORDER BY cr.code_type, cr.code`;
       } else {
         sql = `SELECT ${sel} FROM odts.code_reference cr WHERE cr.code_type = $1 ORDER BY cr.code_type, cr.code`;
       }
       params = [code_type];
     } else {
       if (hasUpdatedBy) {
-        sql = `SELECT ${sel}, u.user_login_name AS updated_by_user_login_name FROM odts.code_reference cr LEFT JOIN odts.users u ON cr.updated_by = u.user_id ORDER BY cr.code_type, cr.code`;
+        sql = `SELECT ${sel}, u.user_login_name AS updated_by_user_login_name FROM odts.code_reference cr LEFT JOIN odts.user_master u ON cr.updated_by = u.user_id ORDER BY cr.code_type, cr.code`;
       } else {
         sql = `SELECT ${sel} FROM odts.code_reference cr ORDER BY cr.code_type, cr.code`;
       }

@@ -135,7 +135,7 @@ router.get('/api/admin/whatsapp/dealers', ensureAdmin, async (req, res) => {
     const { search } = req.query;
     let query = `
       SELECT dealer_id, dealer_name, dealer_code, dealer_phone
-      FROM odts.dealers
+      FROM odts.dealer_master
       WHERE dealer_phone IS NOT NULL AND dealer_phone != ''
     `;
     const params = [];
@@ -217,7 +217,7 @@ router.post('/api/admin/whatsapp/send', ensureAdmin, async (req, res) => {
 
     // Fetch dealer details
     const dealerRes = await pool.query(
-      `SELECT dealer_id, dealer_name, dealer_code, dealer_phone FROM odts.dealers WHERE dealer_id = ANY($1)`,
+      `SELECT dealer_id, dealer_name, dealer_code, dealer_phone FROM odts.dealer_master WHERE dealer_id = ANY($1)`,
       [dealer_ids]
     );
 
@@ -323,8 +323,8 @@ router.get('/api/admin/whatsapp/logs', ensureAdmin, async (req, res) => {
         u.user_name as sent_by_name,
         wmt.template_name
       FROM odts.whatsapp_message_logs wml
-      LEFT JOIN odts.dealers d ON d.dealer_id = wml.dealer_id
-      LEFT JOIN odts.users u ON u.user_id = wml.sent_by
+      LEFT JOIN odts.dealer_master d ON d.dealer_id = wml.dealer_id
+      LEFT JOIN odts.user_master u ON u.user_id = wml.sent_by
       LEFT JOIN odts.whatsapp_message_templates wmt ON wmt.template_id = wml.template_id
       WHERE 1=1
     `;

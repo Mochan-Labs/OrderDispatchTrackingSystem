@@ -10,7 +10,7 @@ async function hasUsersColumn(columnName) {
     `SELECT 1
        FROM information_schema.columns
       WHERE table_schema = 'odts'
-        AND table_name = 'users'
+        AND table_name = 'user_master'
         AND column_name = $1`,
     [columnName]
   );
@@ -46,8 +46,8 @@ async function findUserByLoginName(loginName) {
             u.user_role_id as role_id,
             COALESCE(u.user_is_active_flag, TRUE) as user_is_active_flag,
             COALESCE(${lockExpr}, FALSE) as user_is_locked_flag
-     FROM odts.users u
-     LEFT JOIN odts.user_roles r ON u.user_role_id = r.role_id
+     FROM odts.user_master u
+     LEFT JOIN odts.user_roles_master r ON u.user_role_id = r.role_id
      WHERE u.${loginColumn} = $1`,
     [loginName]
   );
@@ -68,7 +68,7 @@ async function findUserById(id) {
             u.user_role_id as role_id,
             COALESCE(u.user_is_active_flag, TRUE) as user_is_active_flag,
             COALESCE(${lockExpr}, FALSE) as user_is_locked_flag
-     FROM odts.users u LEFT JOIN odts.user_roles r ON u.user_role_id = r.role_id WHERE u.user_id = $1`,
+     FROM odts.user_master u LEFT JOIN odts.user_roles_master r ON u.user_role_id = r.role_id WHERE u.user_id = $1`,
     [id]
   );
   return res.rows[0];
@@ -84,7 +84,7 @@ async function findUserByPhone(phone) {
             u.password_hash, u.dealer_id, r.role_name as role, u.user_role_id as role_id,
             COALESCE(u.user_is_active_flag, TRUE) as user_is_active_flag,
             COALESCE(${lockExpr}, FALSE) as user_is_locked_flag
-     FROM odts.users u LEFT JOIN odts.user_roles r ON u.user_role_id = r.role_id WHERE u.user_phone = $1`,
+     FROM odts.user_master u LEFT JOIN odts.user_roles_master r ON u.user_role_id = r.role_id WHERE u.user_phone = $1`,
     [phone]
   );
   return res.rows[0];
@@ -143,7 +143,7 @@ async function createLoginUser({
   const loginColumn = (await hasUsersColumn('user_login_name')) ? 'user_login_name' : 'user_name';
 
   const result = await db.query(
-    `INSERT INTO odts.users (${columns.join(', ')})
+    `INSERT INTO odts.user_master (${columns.join(', ')})
      VALUES (${placeholders.join(', ')})
      RETURNING user_id as id,
                user_name as username,
@@ -167,7 +167,7 @@ async function setUserLockedFlag(userId, isLocked) {
 
   if (await hasUsersColumn('updated_at')) {
     await db.query(
-      `UPDATE odts.users
+      `UPDATE odts.user_master
           SET ${lockColumn} = $1,
               updated_at = NOW()
         WHERE user_id = $2`,
@@ -216,7 +216,7 @@ async function updateUserLastLoginAt(userId) {
 
   if (await hasUsersColumn('updated_at')) {
     await db.query(
-      `UPDATE odts.users
+      `UPDATE odts.user_master
           SET user_last_login_at = NOW(),
               updated_at = NOW()
         WHERE user_id = $1`,

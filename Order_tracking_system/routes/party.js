@@ -26,7 +26,7 @@ router.get('/api/party/by-dealer/:dealerId', ensureAdmin, async (req, res) => {
       `SELECT party_id, party_code, party_name, party_company_name,
               party_address, party_phone, party_email, party_is_active_flag,
               dealer_id, created_at, updated_at
-         FROM odts.dealer_party
+         FROM odts.dealer_party_master
         WHERE dealer_id = $1
         ORDER BY party_id`,
       [req.params.dealerId]
@@ -59,8 +59,8 @@ router.get('/api/party', ensureAdmin, async (req, res) => {
               d.dealer_address AS dealer_address,
               d.dealer_daily_limit,
               d.dealer_monthly_target
-         FROM odts.dealer_party p
-         LEFT JOIN odts.dealers d ON d.dealer_id = p.dealer_id
+         FROM odts.dealer_party_master p
+         LEFT JOIN odts.dealer_master d ON d.dealer_id = p.dealer_id
         ORDER BY p.party_id`
     );
     res.json(r.rows);
@@ -71,7 +71,7 @@ router.get('/api/party', ensureAdmin, async (req, res) => {
 router.get('/api/party/dealers-list', ensureAdmin, async (req, res) => {
   try {
     const r = await pool.query(
-      `SELECT dealer_id, dealer_name FROM odts.dealers
+      `SELECT dealer_id, dealer_name FROM odts.dealer_master
         WHERE COALESCE(dealer_is_active_flag, TRUE) = TRUE
         ORDER BY dealer_name`
     );
@@ -91,7 +91,7 @@ router.post('/api/party', ensureAdmin, async (req, res) => {
     const resolvedCode = (party_code || '').trim() ||
       (party_company_name.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) + '_' + Date.now().toString().slice(-5));
     const r = await pool.query(
-      `INSERT INTO odts.dealer_party
+      `INSERT INTO odts.dealer_party_master
          (dealer_id, party_code, party_company_name, party_name,
           party_address, party_phone, party_email, party_is_active_flag,
           created_by, created_at, updated_by, updated_at)
@@ -122,7 +122,7 @@ router.put('/api/party/:id', ensureAdmin, async (req, res) => {
     const userId = req.session.user.id;
     if (!userId) return res.status(400).json({ error: 'User session invalid.' });
     const r = await pool.query(
-      `UPDATE odts.dealer_party
+      `UPDATE odts.dealer_party_master
           SET dealer_id=$1, party_code=$2, party_company_name=$3, party_name=$4,
               party_address=$5, party_phone=$6, party_email=$7, party_is_active_flag=$8,
               updated_by=$9, updated_at=now()

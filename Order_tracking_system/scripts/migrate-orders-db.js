@@ -12,7 +12,7 @@ async function run() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS odts.orders (
         order_id                   SERIAL PRIMARY KEY,
-        dealer_id                  INTEGER REFERENCES odts.dealers(dealer_id),
+        dealer_id                  INTEGER REFERENCES odts.dealer_master(dealer_id),
         product_name               VARCHAR(255) NOT NULL,
         quantity                   INTEGER NOT NULL CHECK (quantity > 0),
         unit                       VARCHAR(20) NOT NULL DEFAULT 'MT',

@@ -21,7 +21,7 @@ async function migrate() {
     await client.query(`UPDATE odts.dealers SET dealer_daily_limit = 100, dealer_monthly_target = 2000 WHERE (dealer_daily_limit IS NULL OR dealer_daily_limit = 0)`);
     console.log('Sample data set.');
 
-    const r = await client.query(`SELECT dealer_id, dealer_name, dealer_daily_limit, dealer_monthly_target FROM odts.dealers ORDER BY dealer_id`);
+    const r = await client.query(`SELECT dealer_id, dealer_name, dealer_daily_limit, dealer_monthly_target FROM odts.dealer_master ORDER BY dealer_id`);
     console.table(r.rows);
   } finally {
     client.release();

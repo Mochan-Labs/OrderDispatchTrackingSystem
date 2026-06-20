@@ -58,7 +58,7 @@ const ITEMS_SUBQUERY = `
       'order_dispatch_quantity', oi.order_dispatch_quantity::text
     ) ORDER BY oi.item_id), '[]'::json)
    FROM odts.dealer_order_items oi
-   LEFT JOIN odts.products p ON p.product_id = oi.product_id
+   LEFT JOIN odts.product_master p ON p.product_id = oi.product_id
    WHERE oi.order_id = o.order_id
   ) AS items
 `;
@@ -112,6 +112,7 @@ function toOrderShape(row) {
       driver_phone:                  row.dispatch_driver_phone || null,
       bilty_number:                  row.bilty_number || null,
       actual_loading_location_code:  row.actual_loading_location_code || null,
+      actual_loading_location_desc:  row.actual_loading_location_desc || row.actual_loading_location_code || null,
       dispatch_date:                 row.dispatch_created_at || null,
       dispatch_status:               row.dispatch_status || null,
       expected_delivery:             null,
@@ -128,6 +129,7 @@ function toOrderShape(row) {
     order.dispatch_driver_phone = row.dispatch_driver_phone || null;
     order.bilty_number = row.bilty_number || null;
     order.actual_loading_location_code = row.actual_loading_location_code || null;
+    order.actual_loading_location_desc = row.actual_loading_location_desc || row.actual_loading_location_code || null;
     order.dispatch_created_at = row.dispatch_created_at || null;
     order.dispatch_status = row.dispatch_status || null;
   }
@@ -197,7 +199,7 @@ async function getDealerDailyUsage(dealerId) {
         COALESCE(SUM(order_quantity), 0) as used_today,
         d.dealer_daily_limit
       FROM odts.dealer_orders o
-      JOIN odts.dealers d ON d.dealer_id = o.dealer_id
+      JOIN odts.dealer_master d ON d.dealer_id = o.dealer_id
       WHERE o.dealer_id = $1
         AND DATE(o.order_date) = CURRENT_DATE
         AND o.order_status IN ('ORDER_PLACED', 'ACCEPTED', 'ON_HOLD')
@@ -206,7 +208,7 @@ async function getDealerDailyUsage(dealerId) {
 
     if (result.rows.length === 0) {
       const dealerResult = await pool.query(
-        'SELECT dealer_daily_limit FROM odts.dealers WHERE dealer_id = $1',
+        'SELECT dealer_daily_limit FROM odts.dealer_master WHERE dealer_id = $1',
         [dealerId]
       );
       const dailyLimit = dealerResult.rows.length > 0 ? dealerResult.rows[0].dealer_daily_limit : 0;
@@ -248,18 +250,20 @@ async function fetchOrders({ dealerId, startDate, endDate }) {
     SELECT o.*,
            d.dealer_name, d.dealer_company_name,
            dp.party_company_name, dp.party_name AS party_name_col, dp.party_phone, dp.party_address,
-           lt.code_desc  AS load_type_desc,
-           pl.code_desc  AS preferred_location_desc,
+           lt.warehouse_name  AS load_type_desc,
+           pl.warehouse_name  AS preferred_location_desc,
+           al.warehouse_name  AS actual_loading_location_desc,
            od.dispatch_id, od.dispatch_vehicle_number, od.driver_name AS dispatch_driver_name, od.driver_phone AS dispatch_driver_phone,
            od.bilty_number, od.actual_loading_location_code, od.created_at AS dispatch_created_at, od.dispatch_status,
            od.image_url, od.image_type, od.image_original_size, od.image_compressed_size, od.image_uploaded_at,
            ${ITEMS_SUBQUERY}
     FROM odts.dealer_orders o
-    LEFT JOIN odts.dealers       d  ON d.dealer_id  = o.dealer_id
-    LEFT JOIN odts.dealer_party  dp ON dp.party_id  = o.party_id
-    LEFT JOIN odts.code_reference lt ON lt.code_type = 'loading_type'     AND lt.code = o.load_type_code
-    LEFT JOIN odts.code_reference pl ON pl.code_type = 'loading_location' AND pl.code = o.preferred_location_code
+    LEFT JOIN odts.dealer_master       d  ON d.dealer_id  = o.dealer_id
+    LEFT JOIN odts.dealer_party_master  dp ON dp.party_id  = o.party_id
+    LEFT JOIN odts.warehouse_master lt ON lt.warehouse_type = 'loading_type'     AND lt.warehouse_code = o.load_type_code
+    LEFT JOIN odts.warehouse_master pl ON pl.warehouse_type = 'loading_location' AND pl.warehouse_code = o.preferred_location_code
     LEFT JOIN odts.order_dispatch od ON od.order_id  = o.order_id
+    LEFT JOIN odts.warehouse_master al ON al.warehouse_type = 'loading_location' AND al.warehouse_code = od.actual_loading_location_code
     ${where}
     ORDER BY o.order_date DESC
   `;
@@ -449,7 +453,7 @@ router.get('/api/sales/reports/monthly', ensureSalesOfficer, async (req, res) =>
     const dealerSummary = await pool.query(`
       SELECT
         d.dealer_id, d.dealer_name,
-        (SELECT user_login_name FROM odts.users u WHERE u.dealer_id = d.dealer_id ORDER BY u.user_id LIMIT 1) AS user_login_name,
+        (SELECT user_login_name FROM odts.user_master u WHERE u.dealer_id = d.dealer_id ORDER BY u.user_id LIMIT 1) AS user_login_name,
         d.dealer_monthly_target,
         COUNT(DISTINCT o.order_id)::integer AS total_orders,
         COALESCE(SUM(oi.order_quantity), 0)::numeric AS total_qty,
@@ -457,7 +461,7 @@ router.get('/api/sales/reports/monthly', ensureSalesOfficer, async (req, res) =>
         COUNT(DISTINCT CASE WHEN o.order_status = 'ACCEPTED'      THEN o.order_id END)::integer AS accepted_count,
         COUNT(DISTINCT CASE WHEN o.order_status = 'DISPATCHED'    THEN o.order_id END)::integer AS dispatched_count,
         COUNT(DISTINCT CASE WHEN o.order_status = 'ON_HOLD'       THEN o.order_id END)::integer AS on_hold_count
-      FROM odts.dealers d
+      FROM odts.dealer_master d
       LEFT JOIN odts.dealer_orders o
         ON o.dealer_id = d.dealer_id
         AND DATE_TRUNC('month', o.order_date) = make_date($1, $2, 1)
@@ -474,9 +478,9 @@ router.get('/api/sales/reports/monthly', ensureSalesOfficer, async (req, res) =>
         COUNT(DISTINCT o.order_id)::integer AS order_count,
         COALESCE(SUM(oi.order_quantity), 0)::numeric AS total_qty
       FROM odts.dealer_orders o
-      JOIN odts.dealers d ON d.dealer_id = o.dealer_id
+      JOIN odts.dealer_master d ON d.dealer_id = o.dealer_id
       JOIN odts.dealer_order_items oi ON oi.order_id = o.order_id
-      JOIN odts.products p ON p.product_id = oi.product_id
+      JOIN odts.product_master p ON p.product_id = oi.product_id
       WHERE DATE_TRUNC('month', o.order_date) = make_date($1, $2, 1)
       GROUP BY d.dealer_id, p.product_name
       ORDER BY d.dealer_id, p.product_name
@@ -489,7 +493,7 @@ router.get('/api/sales/reports/monthly', ensureSalesOfficer, async (req, res) =>
         COUNT(DISTINCT o.order_id)::integer AS order_count,
         COALESCE(SUM(oi.order_quantity), 0)::numeric AS total_qty
       FROM odts.dealer_orders o
-      JOIN odts.dealers d ON d.dealer_id = o.dealer_id
+      JOIN odts.dealer_master d ON d.dealer_id = o.dealer_id
       JOIN odts.dealer_order_items oi ON oi.order_id = o.order_id
       WHERE DATE_TRUNC('month', o.order_date) = make_date($1, $2, 1)
       GROUP BY d.dealer_id, DATE(o.order_date)
@@ -551,7 +555,7 @@ router.get('/api/admin/notifications/quota-alerts', ensureAdminOrOfficeExecutive
           THEN ROUND((COALESCE(SUM(oi.order_quantity), 0) / d.dealer_monthly_target) * 100, 1)
           ELSE 0
         END AS percentage
-      FROM odts.dealers d
+      FROM odts.dealer_master d
       LEFT JOIN odts.dealer_orders o
         ON o.dealer_id = d.dealer_id
         AND DATE_TRUNC('month', o.order_date) = make_date($1, $2, 1)
@@ -581,7 +585,7 @@ router.get('/api/dealer/orders/by-driver/:phone', ensureDealer, async (req, res)
              od.bilty_number, od.actual_loading_location_code, od.created_at AS dispatch_created_at,
              ${ITEMS_SUBQUERY}
       FROM odts.dealer_orders o
-      LEFT JOIN odts.dealers d ON d.dealer_id = o.dealer_id
+      LEFT JOIN odts.dealer_master d ON d.dealer_id = o.dealer_id
       INNER JOIN odts.order_dispatch od ON od.order_id = o.order_id
       WHERE od.driver_phone = $1
     `, [phone]);
@@ -598,17 +602,19 @@ router.get('/api/dealer/orders/:id', ensureDealer, async (req, res) => {
       SELECT o.*,
              d.dealer_name,
              dp.party_company_name, dp.party_name AS party_name_col, dp.party_phone, dp.party_address,
-             lt.code_desc AS load_type_desc,
-             pl.code_desc AS preferred_location_desc,
+             lt.warehouse_name AS load_type_desc,
+             pl.warehouse_name AS preferred_location_desc,
+             al.warehouse_name AS actual_loading_location_desc,
              od.dispatch_id, od.dispatch_vehicle_number, od.driver_name AS dispatch_driver_name, od.driver_phone AS dispatch_driver_phone,
              od.bilty_number, od.actual_loading_location_code, od.created_at AS dispatch_created_at,
              ${ITEMS_SUBQUERY}
       FROM odts.dealer_orders o
-      LEFT JOIN odts.dealers       d  ON d.dealer_id  = o.dealer_id
-      LEFT JOIN odts.dealer_party  dp ON dp.party_id  = o.party_id
-      LEFT JOIN odts.code_reference lt ON lt.code_type = 'loading_type'     AND lt.code = o.load_type_code
-      LEFT JOIN odts.code_reference pl ON pl.code_type = 'loading_location' AND pl.code = o.preferred_location_code
+      LEFT JOIN odts.dealer_master       d  ON d.dealer_id  = o.dealer_id
+      LEFT JOIN odts.dealer_party_master  dp ON dp.party_id  = o.party_id
+      LEFT JOIN odts.warehouse_master lt ON lt.warehouse_type = 'loading_type'     AND lt.warehouse_code = o.load_type_code
+      LEFT JOIN odts.warehouse_master pl ON pl.warehouse_type = 'loading_location' AND pl.warehouse_code = o.preferred_location_code
       LEFT JOIN odts.order_dispatch od ON od.order_id  = o.order_id
+      LEFT JOIN odts.warehouse_master al ON al.warehouse_type = 'loading_location' AND al.warehouse_code = od.actual_loading_location_code
       WHERE o.order_id = $1
     `, [parseInt(req.params.id)]);
     if (!result.rows.length) return res.status(404).json({ error: 'Order not found' });
@@ -626,7 +632,7 @@ router.get('/api/dealer/parties', ensureDealer, async (req, res) => {
     const result = await pool.query(
       `SELECT dp.party_id, dp.party_code, dp.party_company_name, dp.party_name,
               dp.party_address, dp.party_phone
-         FROM odts.dealer_party dp
+         FROM odts.dealer_party_master dp
         WHERE dp.dealer_id = $1
           AND COALESCE(dp.party_is_active_flag, TRUE) = TRUE
         ORDER BY dp.party_company_name`,
@@ -652,7 +658,7 @@ router.post('/api/dealer/parties', ensureDealer, async (req, res) => {
     if (!userId) return res.status(400).json({ error: 'User session invalid.' });
 
     const result = await pool.query(
-      `INSERT INTO odts.dealer_party
+      `INSERT INTO odts.dealer_party_master
          (dealer_id, party_code, party_company_name, party_phone, party_address, party_is_active_flag, created_by, created_at, updated_by, updated_at)
        VALUES ($1, $2, $3, $4, $5, TRUE, $6, NOW(), $6, NOW())
        RETURNING party_id, party_company_name, party_phone, party_address`,
@@ -668,9 +674,9 @@ router.post('/api/dealer/parties', ensureDealer, async (req, res) => {
 router.get('/api/codes/:type', ensureDealer, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT code, code_label, code_desc FROM odts.code_reference
-        WHERE code_type = $1
-        ORDER BY code_sort_order`,
+      `SELECT warehouse_code AS code, warehouse_ui_label AS code_label, warehouse_name AS code_desc FROM odts.warehouse_master
+        WHERE warehouse_type = $1
+        ORDER BY warehouse_ui_order`,
       [req.params.type]
     );
     res.json(result.rows);
@@ -682,7 +688,7 @@ router.get('/api/codes/:type', ensureDealer, async (req, res) => {
 router.get('/api/dealer/products', ensureDealer, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT product_id, product_name FROM odts.products
+      `SELECT product_id, product_name FROM odts.product_master
         WHERE COALESCE(product_is_active_flag, TRUE) = TRUE
         ORDER BY product_name`
     );
@@ -701,7 +707,7 @@ router.get('/api/admin/parties/:dealer_id', ensureDealer, async (req, res) => {
     const dealerId = parseInt(req.params.dealer_id);
     const result = await pool.query(`
       SELECT party_id, party_code, party_company_name, party_name, party_phone, party_address, party_is_active_flag
-      FROM odts.dealer_party
+      FROM odts.dealer_party_master
       WHERE dealer_id = $1
       ORDER BY party_company_name
     `, [dealerId]);
@@ -904,7 +910,7 @@ router.post('/api/dealer/orders', ensureDealer, async (req, res) => {
 
     // Send alert to admin if ≥80% threshold reached
     if (usage.daily_limit > 0 && newUsage.percentage >= 80) {
-      const dealerResult = await pool.query('SELECT dealer_name FROM odts.dealers WHERE dealer_id = $1', [dealer_id]);
+      const dealerResult = await pool.query('SELECT dealer_name FROM odts.dealer_master WHERE dealer_id = $1', [dealer_id]);
       const dealerName = dealerResult.rows.length > 0 ? dealerResult.rows[0].dealer_name : `Dealer #${dealer_id}`;
       const adminPhone = await getAdminPhone();
       if (adminPhone) {
@@ -1214,8 +1220,8 @@ router.get('/api/admin/reports/monthly', ensureAdmin, async (req, res) => {
             AND o.order_status != 'ON_HOLD'
           THEN o.order_quantity ELSE 0
         END), 0)::integer AS last_month_total
-      FROM odts.dealers d
-      LEFT JOIN odts.users u ON u.dealer_id = d.dealer_id AND u.user_role_id = 2
+      FROM odts.dealer_master d
+      LEFT JOIN odts.user_master u ON u.dealer_id = d.dealer_id AND u.user_role_id = 2
       LEFT JOIN odts.dealer_orders o ON o.dealer_id = d.dealer_id
       GROUP BY d.dealer_id, d.dealer_name, u.user_login_name, d.dealer_monthly_target, d.dealer_daily_limit
       ORDER BY d.dealer_name

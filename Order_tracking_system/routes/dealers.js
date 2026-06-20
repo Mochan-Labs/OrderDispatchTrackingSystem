@@ -63,10 +63,10 @@ router.get('/api/dealers', ensureAdminOrOffice, async (req, res) => {
               d.dealer_is_active_flag, d.created_at, d.updated_at,
               d.updated_by,
               ub.user_login_name AS updated_by_user_login_name
-       FROM odts.dealers d
-       LEFT JOIN odts.users u ON u.dealer_id = d.dealer_id
-       LEFT JOIN odts.users ub ON d.updated_by = ub.user_id
-       ${hasLocationId ? 'LEFT JOIN odts.locations l ON l.location_id = d.location_id' : ''}
+       FROM odts.dealer_master d
+       LEFT JOIN odts.user_master u ON u.dealer_id = d.dealer_id
+       LEFT JOIN odts.user_master ub ON d.updated_by = ub.user_id
+       ${hasLocationId ? 'LEFT JOIN odts.warehouse_master l ON l.location_id = d.location_id' : ''}
        ORDER BY d.dealer_id, u.user_id`);
     res.json(r.rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -76,7 +76,7 @@ router.get('/api/dealers/locations', ensureAdmin, async (req, res) => {
   try {
     const r = await pool.query(
       `SELECT location_id, location_name
-         FROM odts.locations
+         FROM odts.warehouse_master
         WHERE COALESCE(location_is_active_flag, TRUE) = TRUE
         ORDER BY location_name`
     );
@@ -123,7 +123,7 @@ router.post('/api/dealers', ensureAdmin, async (req, res) => {
     placeholders.push(`$${i++}`, `$${i++}`, `$${i++}`, `$${i++}`, `$${i++}`, `$${i++}`, `$${i++}`, `$${i++}`, 'now()', 'now()');
 
     const r = await pool.query(
-      `INSERT INTO odts.dealers (${cols.join(', ')})
+      `INSERT INTO odts.dealer_master (${cols.join(', ')})
        VALUES (${placeholders.join(', ')})
        RETURNING *`,
       values
@@ -171,7 +171,7 @@ router.put('/api/dealers/:id', ensureAdminOrOffice, async (req, res) => {
     values.push(req.params.id);
 
     const r = await pool.query(
-      `UPDATE odts.dealers
+      `UPDATE odts.dealer_master
           SET ${setParts.join(', ')}
         WHERE dealer_id=$${i} RETURNING *`,
       values
@@ -191,7 +191,7 @@ router.post('/api/dealers/bulk-limits', ensureAdminOrOffice, async (req, res) =>
     for (const u of updates) {
       if (!u.dealer_id) continue;
       const r = await pool.query(
-        `UPDATE odts.dealers
+        `UPDATE odts.dealer_master
             SET dealer_daily_limit=$1, dealer_monthly_target=$2, updated_by=$3, updated_at=now()
           WHERE dealer_id=$4`,
         [
@@ -222,10 +222,10 @@ router.get('/api/dealers/export/parties', ensureAdminOrOffice, async (req, res) 
               dp.updated_at,
               uc.user_login_name AS created_by_user,
               uu.user_login_name AS updated_by_user
-       FROM odts.dealer_party dp
-       JOIN odts.dealers d ON dp.dealer_id = d.dealer_id
-       LEFT JOIN odts.users uc ON dp.created_by = uc.user_id
-       LEFT JOIN odts.users uu ON dp.updated_by = uu.user_id
+       FROM odts.dealer_party_master dp
+       JOIN odts.dealer_master d ON dp.dealer_id = d.dealer_id
+       LEFT JOIN odts.user_master uc ON dp.created_by = uc.user_id
+       LEFT JOIN odts.user_master uu ON dp.updated_by = uu.user_id
        ORDER BY d.dealer_code, dp.party_code`
     );
     res.json(r.rows);

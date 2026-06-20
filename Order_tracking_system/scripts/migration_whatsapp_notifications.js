@@ -19,7 +19,7 @@ const pool = require('../db');
         created_by INT NOT NULL,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW(),
-        FOREIGN KEY (created_by) REFERENCES odts.users(user_id)
+        FOREIGN KEY (created_by) REFERENCES odts.user_master(user_id)
       );
     `);
     console.log('✓ Created whatsapp_message_templates table');
@@ -38,17 +38,17 @@ const pool = require('../db');
         sent_at TIMESTAMP DEFAULT NOW(),
         sent_by INT NOT NULL,
         created_at TIMESTAMP DEFAULT NOW(),
-        FOREIGN KEY (dealer_id) REFERENCES odts.dealers(dealer_id),
+        FOREIGN KEY (dealer_id) REFERENCES odts.dealer_master(dealer_id),
         FOREIGN KEY (template_id) REFERENCES odts.whatsapp_message_templates(template_id) ON DELETE SET NULL,
-        FOREIGN KEY (sent_by) REFERENCES odts.users(user_id)
+        FOREIGN KEY (sent_by) REFERENCES odts.user_master(user_id)
       );
     `);
     console.log('✓ Created whatsapp_message_logs table');
 
     // Insert sample templates
     const adminUserId = (await pool.query(`
-      SELECT user_id FROM odts.users
-      WHERE user_role_id = (SELECT role_id FROM odts.user_roles WHERE role_name = 'ADMIN' LIMIT 1)
+      SELECT user_id FROM odts.user_master
+      WHERE user_role_id = (SELECT role_id FROM odts.user_roles_master WHERE role_name = 'ADMIN' LIMIT 1)
       LIMIT 1
     `)).rows[0]?.user_id || 1;
 

@@ -149,7 +149,7 @@ async function hasTableColumn(tableName, columnName) {
 async function fetchSignupScreenData() {
   const rolesRes = await pool.query(
     `SELECT role_id, role_name
-       FROM odts.user_roles
+       FROM odts.user_roles_master
       ORDER BY role_name`
   );
 
@@ -161,7 +161,7 @@ async function fetchSignupScreenData() {
             dealer_name,
             dealer_code,
             ${hasDealerCompanyName ? 'dealer_company_name' : 'dealer_name AS dealer_company_name'}
-       FROM odts.dealers
+       FROM odts.dealer_master
       ${hasDealerActiveFlag ? 'WHERE COALESCE(dealer_is_active_flag, TRUE) = TRUE' : ''}
       ORDER BY dealer_name`
   );
@@ -177,9 +177,9 @@ async function fetchSignupScreenData() {
             COALESCE(u.user_is_active_flag, TRUE)  AS user_is_active_flag,
             COALESCE(u.user_is_locked_flag, FALSE) AS user_is_locked_flag,
             r.role_name
-       FROM odts.users u
-       LEFT JOIN odts.user_roles r ON r.role_id = u.user_role_id
-      LEFT JOIN odts.dealers d ON d.dealer_id = u.dealer_id
+       FROM odts.user_master u
+       LEFT JOIN odts.user_roles_master r ON r.role_id = u.user_role_id
+      LEFT JOIN odts.dealer_master d ON d.dealer_id = u.dealer_id
       ORDER BY u.user_role_id, u.dealer_id, u.user_login_name`
   );
 
@@ -281,7 +281,7 @@ async function lockUserAfterFailedAttempts(userId) {
   try {
     if (await hasUserIsLockedFlagColumn()) {
       await pool.query(
-        `UPDATE odts.users
+        `UPDATE odts.user_master
             SET user_is_locked_flag = TRUE
           WHERE user_id = $1`,
         [userId]
@@ -343,7 +343,7 @@ router.post('/signup', ensureAdminOrOfficeExecutive, async (req, res) => {
       return renderSignup(req, res, { error: 'Role is mandatory.', formData });
     }
 
-    const roleRes = await pool.query('SELECT role_id, role_name FROM odts.user_roles WHERE role_id = $1', [parsedRoleId]);
+    const roleRes = await pool.query('SELECT role_id, role_name FROM odts.user_roles_master WHERE role_id = $1', [parsedRoleId]);
     if (!roleRes.rows.length) {
       return renderSignup(req, res, { error: 'Selected role is invalid.', formData });
     }
@@ -361,7 +361,7 @@ router.post('/signup', ensureAdminOrOfficeExecutive, async (req, res) => {
 
       const dealerExists = await pool.query(
         `SELECT dealer_id
-           FROM odts.dealers
+           FROM odts.dealer_master
           WHERE dealer_id = $1
             ${hasDealerActiveFlag ? 'AND COALESCE(dealer_is_active_flag, TRUE) = TRUE' : ''}`,
         [parsedDealerId]
@@ -387,13 +387,13 @@ router.post('/signup', ensureAdminOrOfficeExecutive, async (req, res) => {
       return renderSignup(req, res, { error: 'Please provide a valid email address.', formData });
     }
 
-    const existingLogin = await pool.query('SELECT user_id FROM odts.users WHERE user_login_name = $1', [String(user_login_name).trim()]);
+    const existingLogin = await pool.query('SELECT user_id FROM odts.user_master WHERE user_login_name = $1', [String(user_login_name).trim()]);
     if (existingLogin.rows.length) {
       return renderSignup(req, res, { error: 'User login name already exists.', formData });
     }
 
     if (user_email && String(user_email).trim()) {
-      const existingEmail = await pool.query('SELECT user_id FROM odts.users WHERE user_email = $1', [String(user_email).trim().toLowerCase()]);
+      const existingEmail = await pool.query('SELECT user_id FROM odts.user_master WHERE user_email = $1', [String(user_email).trim().toLowerCase()]);
       if (existingEmail.rows.length) {
         return renderSignup(req, res, { error: 'Email already exists.', formData });
       }

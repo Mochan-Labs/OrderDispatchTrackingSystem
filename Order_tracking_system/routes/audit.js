@@ -41,9 +41,9 @@ const USER_INFO_SELECT = `
 
 const AUDIT_JOINS = `
   FROM odts.user_login_audit a
-  LEFT JOIN odts.users       u  ON u.user_id      = a.login_user_id
-  LEFT JOIN odts.user_roles  ur ON ur.role_id     = u.user_role_id
-  LEFT JOIN odts.dealers     d  ON d.dealer_id    = u.dealer_id
+  LEFT JOIN odts.user_master       u  ON u.user_id      = a.login_user_id
+  LEFT JOIN odts.user_roles_master  ur ON ur.role_id     = u.user_role_id
+  LEFT JOIN odts.dealer_master     d  ON d.dealer_id    = u.dealer_id
 `;
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -117,8 +117,8 @@ router.get('/api/admin/audit-roles', ensureAdmin, async (req, res) => {
     const result = await pool.query(
       `SELECT DISTINCT ur.role_name AS role
          FROM odts.user_login_audit a
-         LEFT JOIN odts.users      u  ON u.user_id  = a.login_user_id
-         LEFT JOIN odts.user_roles ur ON ur.role_id = u.user_role_id
+         LEFT JOIN odts.user_master      u  ON u.user_id  = a.login_user_id
+         LEFT JOIN odts.user_roles_master ur ON ur.role_id = u.user_role_id
         WHERE ur.role_name IS NOT NULL
         ORDER BY ur.role_name`
     );

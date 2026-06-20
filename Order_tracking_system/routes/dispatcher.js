@@ -119,24 +119,24 @@ router.get('/api/dispatcher/orders', ensureDispatcher, async (req, res) => {
         d.dealer_name,
         d.dealer_company_name,
         (SELECT u.user_login_name
-           FROM odts.users u
+           FROM odts.user_master u
           WHERE u.dealer_id = o.dealer_id
-            AND u.user_role_id = (SELECT role_id FROM odts.user_roles WHERE role_name = 'DEALER' LIMIT 1)
+            AND u.user_role_id = (SELECT role_id FROM odts.user_roles_master WHERE role_name = 'DEALER' LIMIT 1)
           LIMIT 1
         ) AS dealer_login_name,
         dp.party_company_name,
         dp.party_name AS party_name_col,
         dp.party_phone,
         dp.party_address,
-        lt.code_desc  AS load_type_desc,
-        pl.code_desc  AS preferred_location_desc,
+        lt.warehouse_name  AS load_type_desc,
+        pl.warehouse_name  AS preferred_location_desc,
         od.dispatch_id,
         od.dispatch_vehicle_number,
         od.driver_name AS dispatch_driver_name,
         od.driver_phone AS dispatch_driver_phone,
         od.bilty_number,
         od.actual_loading_location_code,
-        al.code_desc  AS actual_location_desc,
+        al.warehouse_name  AS actual_location_desc,
         od.dispatch_status,
         od.created_at AS dispatch_created_at,
         od.image_url,
@@ -155,16 +155,16 @@ router.get('/api/dispatcher/orders', ensureDispatcher, async (req, res) => {
             'order_dispatch_comments', oi.order_dispatch_comments
           ) ORDER BY oi.item_id), '[]'::json)
          FROM odts.dealer_order_items oi
-         LEFT JOIN odts.products p ON p.product_id = oi.product_id
+         LEFT JOIN odts.product_master p ON p.product_id = oi.product_id
          WHERE oi.order_id = o.order_id
         ) AS items
       FROM odts.dealer_orders o
-      LEFT JOIN odts.dealers       d  ON d.dealer_id  = o.dealer_id
-      LEFT JOIN odts.dealer_party  dp ON dp.party_id  = o.party_id
-      LEFT JOIN odts.code_reference lt ON lt.code_type = 'loading_type'     AND lt.code = o.load_type_code
-      LEFT JOIN odts.code_reference pl ON pl.code_type = 'loading_location' AND pl.code = o.preferred_location_code
+      LEFT JOIN odts.dealer_master       d  ON d.dealer_id  = o.dealer_id
+      LEFT JOIN odts.dealer_party_master  dp ON dp.party_id  = o.party_id
+      LEFT JOIN odts.warehouse_master lt ON lt.warehouse_type = 'loading_type'     AND lt.warehouse_code = o.load_type_code
+      LEFT JOIN odts.warehouse_master pl ON pl.warehouse_type = 'loading_location' AND pl.warehouse_code = o.preferred_location_code
       LEFT JOIN odts.order_dispatch od ON od.order_id  = o.order_id
-      LEFT JOIN odts.code_reference al ON al.code_type = 'loading_location' AND al.code = od.actual_loading_location_code
+      LEFT JOIN odts.warehouse_master al ON al.warehouse_type = 'loading_location' AND al.warehouse_code = od.actual_loading_location_code
       WHERE ${whereClause}
       ORDER BY o.dealer_id, o.order_date ASC
     `, values);
@@ -417,7 +417,7 @@ router.patch('/api/dispatcher/orders/:id/dispatch-quantities', ensureDispatcher,
         const itemData = await client.query(
           `SELECT oi.order_bags, oi.order_quantity, p.product_name
            FROM odts.dealer_order_items oi
-           LEFT JOIN odts.products p ON p.product_id = oi.product_id
+           LEFT JOIN odts.product_master p ON p.product_id = oi.product_id
            WHERE oi.item_id = $1`,
           [parseInt(item_id)]
         );
@@ -488,9 +488,9 @@ router.patch('/api/dispatcher/orders/:id/dispatch-quantities', ensureDispatcher,
       // Update dispatch status in order_dispatch
       await client.query(
         `UPDATE odts.order_dispatch
-         SET dispatch_status = $1, updated_at = NOW()
+         SET dispatch_status = $1, updated_by = $3, updated_at = NOW()
          WHERE order_id = $2`,
-        [dispatchStatus, orderId]
+        [dispatchStatus, orderId, req.session.user.id]
       );
 
       console.log(`[Dispatcher] Successfully updated order ${orderId} dispatch_status to: ${dispatchStatus}`);

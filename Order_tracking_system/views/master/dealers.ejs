@@ -1,7 +1,7 @@
 <%- include('../partials/header') %>
-<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.development.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.5/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <nav aria-label="breadcrumb" class="mb-3">
@@ -208,7 +208,7 @@ function App(){
       const partiesRes=await fetch('/api/dealers/export/parties');
       if(!partiesRes.ok)throw new Error(await partiesRes.text());
       const partiesRows=await partiesRes.json();
-      const partiesData=partiesRows.map(p=>({'Dealer Code':p.dealer_code,'Party Code':p.party_code||'','Party Name':p.party_name||'','Party Company Name':p.party_company_name||'','Phone':p.party_phone||'','Email':p.party_email||'','Address':p.party_address||'','Active':p.party_is_active_flag?'Yes':'No','Created At':p.created_at?new Date(p.created_at).toLocaleDateString():'','Created By':p.created_by_user||'','Updated At':p.updated_at?new Date(p.updated_at).toLocaleDateString():'','Updated By':p.updated_by_user||''}));
+      const partiesData=partiesRows.map(p=>({'Dealer Code':p.dealer_code,'Party Code':p.party_code||'','Party Name':p.party_name||'','Party Company Name':p.party_company_name||'','Phone':p.party_phone||'','Email':p.party_email||'','Address':p.party_address||'','Active':p.party_is_active_flag?'Yes':'No','Updated At':p.updated_at?new Date(p.updated_at).toLocaleDateString():'','Updated By':p.updated_by_user||''}));
       const wb=XLSX.utils.book_new();
       const dealersWs=XLSX.utils.json_to_sheet(dealersData);
       const partiesWs=XLSX.utils.json_to_sheet(partiesData);

@@ -26,8 +26,8 @@ router.get('/api/user-roles', ensureAdmin, async (req, res) => {
       SELECT
         ur.*,
         u.user_login_name AS updated_by
-      FROM odts.user_roles ur
-      LEFT JOIN odts.users u ON u.user_id = ur.updated_by
+      FROM odts.user_roles_master ur
+      LEFT JOIN odts.user_master u ON u.user_id = ur.updated_by
       ORDER BY ur.role_name
     `);
     res.json(r.rows);
@@ -40,7 +40,7 @@ router.post('/api/user-roles', ensureAdmin, async (req, res) => {
   if (!role_name) return res.status(400).json({ error: 'Role name required' });
   try {
     const r = await pool.query(
-      `INSERT INTO odts.user_roles(role_name, role_desc, created_by, updated_by, created_at, updated_at) VALUES($1,$2,$3,$4,now(),now()) RETURNING *`,
+      `INSERT INTO odts.user_roles_master(role_name, role_desc, created_by, updated_by, created_at, updated_at) VALUES($1,$2,$3,$4,now(),now()) RETURNING *`,
       [role_name.trim().toUpperCase(), role_desc||'', req.session.user.id, req.session.user.id]
     );
     res.status(201).json(r.rows[0]);
@@ -53,7 +53,7 @@ router.put('/api/user-roles/:id', ensureAdmin, async (req, res) => {
   if (!role_name) return res.status(400).json({ error: 'Role name required' });
   try {
     const r = await pool.query(
-      `UPDATE odts.user_roles SET role_name=$1, role_desc=$2, updated_by=$3, updated_at=now() WHERE role_id=$4 RETURNING *`,
+      `UPDATE odts.user_roles_master SET role_name=$1, role_desc=$2, updated_by=$3, updated_at=now() WHERE role_id=$4 RETURNING *`,
       [role_name.trim().toUpperCase(), role_desc||'', req.session.user.id, req.params.id]
     );
     if (!r.rows.length) return res.status(404).json({ error: 'Role not found' });

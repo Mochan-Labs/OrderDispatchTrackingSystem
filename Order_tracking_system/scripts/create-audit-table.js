@@ -24,7 +24,7 @@ async function run() {
         is_active      BOOLEAN      DEFAULT TRUE,
         created_at     TIMESTAMP    DEFAULT NOW(),
         CONSTRAINT fk_audit_user FOREIGN KEY (user_id)
-          REFERENCES odts.users(user_id) ON DELETE SET NULL
+          REFERENCES odts.user_master(user_id) ON DELETE SET NULL
       )
     `);
     console.log('Table created OK');

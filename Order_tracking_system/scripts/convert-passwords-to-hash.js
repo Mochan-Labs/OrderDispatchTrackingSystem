@@ -21,7 +21,7 @@ async function run() {
     // Get all users
     const result = await pool.query(
       `SELECT user_id, user_login_name, password_hash
-       FROM odts.users
+       FROM odts.user_master
        ORDER BY user_id`
     );
 

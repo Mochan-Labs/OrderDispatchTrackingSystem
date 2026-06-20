@@ -17,34 +17,40 @@ router.get('/master/locations', ensureAuth, (req, res) => {
   res.render('master/locations', { user: req.session.user });
 });
 
-router.get('/api/locations', ensureAdmin, async (req, res) => {
+router.get('/api/warehouses', ensureAdmin, async (req, res) => {
   try {
-    const r = await pool.query('SELECT * FROM odts.locations ORDER BY 1');
+    const r = await pool.query(`
+      SELECT warehouse_id, warehouse_code, warehouse_name, warehouse_type, warehouse_ui_label, warehouse_ui_order, created_at, updated_at, created_by, updated_by
+      FROM odts.warehouse_master
+      ORDER BY warehouse_type, warehouse_ui_order, warehouse_name
+    `);
     res.json(r.rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.post('/api/locations', ensureAdmin, async (req, res) => {
-  const { location_name, location_desc, location_is_active_flag } = req.body;
-  if (!location_name) return res.status(400).json({ error: 'Location name required' });
+router.post('/api/warehouses', ensureAdmin, async (req, res) => {
+  const { warehouse_code, warehouse_name, warehouse_type, warehouse_ui_label, warehouse_ui_order } = req.body;
+  if (!warehouse_code || !warehouse_name || !warehouse_type) return res.status(400).json({ error: 'Warehouse code, name, and type are required' });
   try {
+    const userId = req.session.user.id;
     const r = await pool.query(
-      `INSERT INTO odts.locations(location_name, location_desc, location_is_active_flag, created_at, updated_at)
-       VALUES($1,$2,$3,now(),now()) RETURNING *`,
-      [location_name.trim(), location_desc||'', location_is_active_flag !== false]
+      `INSERT INTO odts.warehouse_master(warehouse_code, warehouse_name, warehouse_type, warehouse_ui_label, warehouse_ui_order, created_by, updated_by, created_at, updated_at)
+       VALUES($1,$2,$3,$4,$5,$6,$7,now(),now()) RETURNING *`,
+      [warehouse_code.trim(), warehouse_name.trim(), warehouse_type.trim(), warehouse_ui_label||'', warehouse_ui_order||0, userId, userId]
     );
     res.status(201).json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.put('/api/locations/:id', ensureAdmin, async (req, res) => {
-  const { location_name, location_desc, location_is_active_flag } = req.body;
-  if (!location_name) return res.status(400).json({ error: 'Location name required' });
+router.put('/api/warehouses/:id', ensureAdmin, async (req, res) => {
+  const { warehouse_code, warehouse_name, warehouse_type, warehouse_ui_label, warehouse_ui_order } = req.body;
+  if (!warehouse_code || !warehouse_name || !warehouse_type) return res.status(400).json({ error: 'Warehouse code, name, and type are required' });
   try {
+    const userId = req.session.user.id;
     const r = await pool.query(
-      `UPDATE odts.locations SET location_name=$1, location_desc=$2, location_is_active_flag=$3, updated_at=now()
-       WHERE location_id=$4 RETURNING *`,
-      [location_name.trim(), location_desc||'', location_is_active_flag !== false, req.params.id]
+      `UPDATE odts.warehouse_master SET warehouse_code=$1, warehouse_name=$2, warehouse_type=$3, warehouse_ui_label=$4, warehouse_ui_order=$5, updated_by=$6, updated_at=now()
+       WHERE warehouse_id=$7 RETURNING *`,
+      [warehouse_code.trim(), warehouse_name.trim(), warehouse_type.trim(), warehouse_ui_label||'', warehouse_ui_order||0, userId, req.params.id]
     );
     if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
     res.json(r.rows[0]);

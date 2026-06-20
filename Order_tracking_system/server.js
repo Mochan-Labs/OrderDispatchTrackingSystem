@@ -36,6 +36,7 @@ const { initializeS3 } = require('./services/s3Service');
     const codeReferenceRoutes = require('./routes/codeReference');
     const dispatcherRoutes = require('./routes/dispatcher');
     const notificationRoutes = require('./routes/notifications');
+    const locationsRoutes = require('./routes/locations');
 
     const app = express();
 
@@ -102,6 +103,7 @@ const { initializeS3 } = require('./services/s3Service');
     app.use('/', codeReferenceRoutes);
     app.use('/', dispatcherRoutes);
     app.use('/', notificationRoutes);
+    app.use('/', locationsRoutes);
 
     app.get('/health', (req, res) => {
       res.status(200).send('OK');
