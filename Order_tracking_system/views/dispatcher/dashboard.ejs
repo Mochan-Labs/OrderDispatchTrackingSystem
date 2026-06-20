@@ -1,7 +1,8 @@
 <%- include('../partials/header') %>
+<script>if(!window.__chromium_devtools_metrics_reporter)window.__chromium_devtools_metrics_reporter=()=>{};</script>
 <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.5/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.25.0/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.0/dist/browser-image-compression.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
@@ -87,30 +88,69 @@ function Toast({ msg, type, onClose }) {
 }
 
 // Global handler for downloading receipts
-function handleDownloadReceipt(imageUrl, orderId) {
+async function handleDownloadReceipt(imageUrl, orderId) {
   try {
-    fetch(imageUrl)
-      .then(response => {
-        if (!response.ok) throw new Error('Failed to download receipt');
-        return response.blob();
-      })
-      .then(blob => {
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
+    if (!imageUrl) throw new Error('No receipt URL provided');
 
-        const timestamp = new Date().toISOString().split('T')[0];
-        const ext = imageUrl.includes('jpeg') || imageUrl.includes('jpg') ? 'jpg' : 'png';
-        link.download = `Receipt_Order${orderId}_${timestamp}.${ext}`;
+    console.log('[Download] Starting receipt download:', imageUrl);
+    let urlToDownload = imageUrl;
 
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(url);
-      });
+    // If imageUrl doesn't start with http, it's either a local path or S3 key
+    if (!imageUrl.startsWith('http')) {
+      // Check if it's a local path (starts with /uploads)
+      if (imageUrl.startsWith('/uploads')) {
+        console.log('[Download] Using local path directly:', imageUrl);
+        urlToDownload = imageUrl;
+      } else if (imageUrl.startsWith('receipts/')) {
+        // Convert S3 key to local path for local storage mode
+        console.log('[Download] Converting S3 key to local path:', imageUrl);
+        urlToDownload = `/uploads/${imageUrl}`;
+      } else {
+        // Try generating presigned URL for S3
+        console.log('[Download] Generating presigned URL for S3 key:', imageUrl);
+        const res = await fetch('/api/dispatcher/presigned-read-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ s3Key: imageUrl })
+        });
+
+        if (!res.ok) {
+          throw new Error('Failed to generate presigned URL');
+        }
+
+        const data = await res.json();
+        urlToDownload = data.url;
+      }
+    }
+
+    console.log('[Download] Fetching from:', urlToDownload);
+    const response = await fetch(urlToDownload);
+    console.log('[Download] Response status:', response.status);
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const blob = await response.blob();
+    console.log('[Download] Blob size:', blob.size);
+
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+
+    const timestamp = new Date().toISOString().split('T')[0];
+    const ext = urlToDownload.includes('jpeg') || urlToDownload.includes('jpg') ? 'jpg' : 'png';
+    link.download = `Receipt_Order${orderId}_${timestamp}.${ext}`;
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    console.log('[Download] Download completed successfully');
   } catch (error) {
-    console.error('Download failed:', error);
-    alert('Failed to download receipt');
+    console.error('[Download] Error:', error);
+    alert(`Failed to download receipt: ${error.message}`);
   }
 }
 
@@ -312,6 +352,18 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
         const localResult = await localUploadRes.json();
         s3Url = localResult.image_url;
         console.log('Receipt uploaded locally:', s3Url);
+
+        // For local storage, the URL is already a displayable local path
+        // Store this local path in metadata (not an S3 key)
+        setUploadProgress(80);
+        setUploadProgress(95);
+        setUploadedImageUrl(s3Url);
+        setImageMetadata({
+          image_url: s3Url,
+          image_type: fileToUpload.type,
+          image_original_size: selectedFile.size,
+          image_compressed_size: compressedSize,
+        });
       } else {
         // S3 upload: PUT file directly to presigned URL
         console.log('Uploading file directly to S3...');
@@ -325,40 +377,44 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
           throw new Error(`S3 upload failed: ${s3UploadRes.status} ${s3UploadRes.statusText}`);
         }
 
-        // After successful upload, get a READ presigned URL for displaying the image
-        console.log('Generating read presigned URL...');
-        const s3Key = presignedUrl.split('/receipts/')[1]?.split('?')[0];
-        if (s3Key) {
-          const readUrlRes = await fetch('/api/dispatcher/presigned-read-url', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ s3Key: `receipts/${s3Key}` })
-          });
-
-          if (readUrlRes.ok) {
-            const readResult = await readUrlRes.json();
-            s3Url = readResult.url;
-            console.log('Read presigned URL generated successfully');
-          } else {
-            throw new Error('Failed to generate read presigned URL');
-          }
-        } else {
+        // After successful upload, extract S3 key and generate fresh presigned URL for preview
+        console.log('Extracting S3 key from upload URL...');
+        const extractedS3Key = presignedUrl.split('/receipts/')[1]?.split('?')[0];
+        if (!extractedS3Key) {
           throw new Error('Could not extract S3 key from upload URL');
         }
-        console.log('Receipt uploaded to S3:', s3Url);
+
+        const fullS3Key = `receipts/${extractedS3Key}`;
+        console.log('S3 key extracted:', fullS3Key);
+
+        // Generate presigned READ URL for preview display
+        console.log('Generating presigned read URL for preview...');
+        const readUrlRes = await fetch('/api/dispatcher/presigned-read-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ s3Key: fullS3Key })
+        });
+
+        if (!readUrlRes.ok) {
+          throw new Error('Failed to generate read presigned URL');
+        }
+
+        const readResult = await readUrlRes.json();
+        const previewUrl = readResult.url;
+        console.log('Presigned read URL generated for preview');
+
+        setUploadProgress(80);
+        setUploadProgress(95);
+
+        // Store metadata: save only S3 key (database), but display fresh presigned URL (preview)
+        setUploadedImageUrl(previewUrl);
+        setImageMetadata({
+          image_url: fullS3Key,
+          image_type: fileToUpload.type,
+          image_original_size: selectedFile.size,
+          image_compressed_size: compressedSize,
+        });
       }
-
-      setUploadProgress(80);
-      setUploadProgress(95);
-
-      // Store metadata
-      setUploadedImageUrl(s3Url);
-      setImageMetadata({
-        image_url: s3Url,
-        image_type: fileToUpload.type,
-        image_original_size: selectedFile.size,
-        image_compressed_size: compressedSize,
-      });
 
       setUploadProgress(100);
       setUploading(false);
