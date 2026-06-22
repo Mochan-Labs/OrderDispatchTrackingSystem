@@ -3,6 +3,8 @@
 <script>
   const isEditMode = <%= editOrderId ? 'true' : 'false' %>;
   const editOrderId = <% if (editOrderId) { %><%= parseInt(editOrderId) %><% } else { %>null<% } %>;
+  const editDealerId = <% if (editDealerId) { %><%= parseInt(editDealerId) %><% } else { %>null<% } %>;
+  const returnUrl = '<%= returnUrl || "/orders" %>';
 </script>
 
 <nav aria-label="breadcrumb" class="mb-3">
@@ -356,7 +358,9 @@
   (async () => {
     const sel = document.getElementById('party_select');
     try {
-      const res = await fetch('/api/dealer/parties');
+      // If editing a dealer's order and dealerId is known, load parties for that dealer
+      const url = editDealerId ? `/api/admin/parties/${editDealerId}` : '/api/dealer/parties';
+      const res = await fetch(url);
       partiesData = await res.json();
       sel.innerHTML = '<option value="">Select Party</option>';
       if (partiesData.length === 0) {
@@ -702,7 +706,7 @@
 
       const successMsg = editingOrderId ? `Order #${data.order_id} updated successfully.` : `Order #${data.order_id} placed successfully.`;
       showAlert('success', successMsg);
-      window.setTimeout(() => { window.location.href = '/orders'; }, 800);
+      window.setTimeout(() => { window.location.href = returnUrl; }, 800);
     } catch (error) {
       showAlert('danger', error.message);
     } finally {

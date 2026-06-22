@@ -435,23 +435,30 @@ router.post('/signin', async (req, res) => {
 
   const loginName = String(user_login_name || '').trim();
   try {
+    console.log(`[Signin] Attempting login for: ${loginName}`);
     const user = await userModel.findUserByLoginName(loginName);
+    console.log(`[Signin] User lookup result:`, user ? `Found (id: ${user.id})` : 'NOT FOUND');
+
     if (!user) {
       await insertAudit(req, { username: loginName }, 'PASSWORD', 'FAILED');
       return res.render('signin', { error: 'Invalid user name or password' });
     }
 
     if (!user.user_is_active_flag) {
+      console.log(`[Signin] User inactive`);
       await insertAudit(req, { id: user.id, username: user.user_login_name || user.username, email: user.email, mobile: user.mobile || null, role: user.role }, 'PASSWORD', 'FAILED');
       return res.render('signin', { error: 'User is not active. Kindly contact Office' });
     }
 
     if (user.user_is_locked_flag) {
+      console.log(`[Signin] User locked`);
       await insertAudit(req, { id: user.id, username: user.user_login_name || user.username, email: user.email, mobile: user.mobile || null, role: user.role }, 'PASSWORD', 'FAILED');
       return res.render('signin', { error: 'User is locked due to multiple incorrect password. Kindly contact Office' });
     }
 
+    console.log(`[Signin] Verifying password for user: ${user.user_login_name}`);
     const ok = await userModel.verifyPassword(password, user.password_hash);
+    console.log(`[Signin] Password verification:`, ok ? 'SUCCESS' : 'FAILED');
     if (!ok) {
       await insertAudit(req, { id: user.id, username: user.user_login_name || user.username, email: user.email, mobile: user.mobile || null, role: user.role }, 'PASSWORD', 'FAILED');
 
@@ -517,6 +524,14 @@ router.get('/logout', async (req, res) => {
 });
 
 router.get('/dashboard', ensureAuthenticated, (req, res) => {
+  const userRole = req.session.user.role;
+
+  // Render role-specific dashboard
+  if (userRole === 'STOCK_MANAGER') {
+    return res.render('dashboard-stock-manager', { user: req.session.user });
+  }
+
+  // Default dashboard for ADMIN, OFFICE_EXECUTIVE, DISPATCHER, DEALER, SALES_OFFICER
   res.render('dashboard', { user: req.session.user });
 });
 

@@ -1,0 +1,823 @@
+<%- include('../partials/header') %>
+<script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.5/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/dashboard">Dashboard</a></li>
+    <li class="breadcrumb-item"><a href="#">Master Data</a></li>
+    <li class="breadcrumb-item active">Warehouse Stock</li>
+  </ol>
+</nav>
+<div id="app-root"></div>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+function Toast({ msg, type, onClose }) {
+  if (!msg) return null;
+  return (
+    <div className={`alert alert-${type} alert-dismissible d-flex align-items-center`} role="alert">
+      <span>{msg}</span>
+      <button type="button" className="btn-close ms-auto" onClick={onClose}></button>
+    </div>
+  );
+}
+
+function WarehouseStockApp() {
+  // Part 1: Current Inventory
+  const [inventoryData, setInventoryData] = useState([]);
+  const [warehousesInventory, setWarehousesInventory] = useState([]);
+  const [loadingInventory, setLoadingInventory] = useState(false);
+
+  // Part 2: Stock Entries
+  const [stockEntries, setStockEntries] = useState([]);
+  const [loadingStockEntries, setLoadingStockEntries] = useState(false);
+
+  const [toast, setToast] = useState({ msg: '', type: 'success' });
+
+  // Calculate default dates (last 2 days for Part 2)
+  const getDefault2DaysAgo = () => {
+    const today = new Date();
+    const twoDaysAgo = new Date(today.getTime() - 2 * 24 * 60 * 60 * 1000);
+    return twoDaysAgo.toISOString().split('T')[0];
+  };
+
+  const getTodayDate = () => {
+    return new Date().toISOString().split('T')[0];
+  };
+
+  // Part 1 Filters
+  const [selectedWarehouse1, setSelectedWarehouse1] = useState('');
+  const [searchTerm1, setSearchTerm1] = useState('');
+  const [startDate1, setStartDate1] = useState('');
+  const [endDate1, setEndDate1] = useState('');
+
+  // Part 2 Filters (Default: Last 2 days)
+  const [selectedWarehouse2, setSelectedWarehouse2] = useState('');
+  const [searchTerm2, setSearchTerm2] = useState('');
+  const [startDate2, setStartDate2] = useState(getDefault2DaysAgo());
+  const [endDate2, setEndDate2] = useState(getTodayDate());
+
+  // Enter Stock Modal State
+  const [showModal, setShowModal] = useState(false);
+  const [savingStock, setSavingStock] = useState(false);
+  const [products, setProducts] = useState([]);
+
+  const [formHeader, setFormHeader] = useState({
+    warehouse_id: '',
+    warehouse_stock_date: getTodayDate(),
+    warehouse_vehicle_number: '',
+    warehouse_driver_name: '',
+    warehouse_driver_phone: '',
+    warehouse_bilty_number: '',
+    warehouse_stock_notes: ''
+  });
+
+  const [formItem, setFormItem] = useState({
+    warehouse_product_id: '',
+    warehouse_product_qty: ''
+  });
+
+  const [items, setItems] = useState([]);
+
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast({ msg: '', type: 'success' }), 4000);
+  };
+
+  // Fetch both warehouse lists
+  const fetchWarehouses = async () => {
+    try {
+      const res = await fetch('/api/warehouses-dropdown');
+      const data = await res.json();
+      setWarehousesInventory(data);
+    } catch (e) {
+      showToast('Failed to load warehouses: ' + e.message, 'danger');
+    }
+  };
+
+  // Part 1: Fetch Inventory Summary
+  const fetchInventory = async () => {
+    setLoadingInventory(true);
+    try {
+      let url = '/api/warehouse-inventory/summary/by-warehouse';
+      const params = new URLSearchParams();
+      if (startDate1) params.append('startDate', startDate1);
+      if (endDate1) params.append('endDate', endDate1);
+      if (params.toString()) url += '?' + params.toString();
+
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(await res.text());
+      setInventoryData(await res.json());
+    } catch (e) {
+      showToast('Failed to load inventory: ' + e.message, 'danger');
+    } finally {
+      setLoadingInventory(false);
+    }
+  };
+
+  // Part 2: Fetch Stock Entries (with optional date overrides)
+  const fetchStockEntries = async (dateStart = startDate2, dateEnd = endDate2) => {
+    setLoadingStockEntries(true);
+    try {
+      let url = '/api/warehouse-stock';
+      const params = new URLSearchParams();
+      if (dateStart) params.append('startDate', dateStart);
+      if (dateEnd) params.append('endDate', dateEnd);
+      if (params.toString()) url += '?' + params.toString();
+
+      console.log('Fetching stock entries:', url);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(await res.text());
+      setStockEntries(await res.json());
+    } catch (e) {
+      showToast('Failed to load stock entries: ' + e.message, 'danger');
+    } finally {
+      setLoadingStockEntries(false);
+    }
+  };
+
+  // Fetch products for Enter Stock form
+  const fetchProducts = async () => {
+    try {
+      const res = await fetch('/api/products-dropdown');
+      setProducts(await res.json());
+    } catch (e) {
+      showToast('Failed to load products: ' + e.message, 'danger');
+    }
+  };
+
+  // Handle Add Item
+  const handleAddItem = (e) => {
+    e.preventDefault();
+    if (!formItem.warehouse_product_id || !formItem.warehouse_product_qty) {
+      return showToast('Product and quantity are required', 'warning');
+    }
+
+    const product = products.find(p => p.product_id === parseInt(formItem.warehouse_product_id));
+    setItems([...items, {
+      warehouse_product_id: parseInt(formItem.warehouse_product_id),
+      product_name: product?.product_name,
+      warehouse_product_qty: parseInt(formItem.warehouse_product_qty),
+      temp_id: Date.now()
+    }]);
+
+    setFormItem({ warehouse_product_id: '', warehouse_product_qty: '' });
+    showToast('Item added');
+  };
+
+  // Handle Remove Item
+  const handleRemoveItem = (tempId) => {
+    setItems(items.filter(i => i.temp_id !== tempId));
+  };
+
+  // Handle Save Stock
+  const handleSaveStock = async (e) => {
+    e.preventDefault();
+    if (!formHeader.warehouse_id || items.length === 0) {
+      return showToast('Select warehouse and add at least one item', 'warning');
+    }
+
+    if (formHeader.warehouse_driver_phone && formHeader.warehouse_driver_phone.length !== 10) {
+      return showToast('❌ Driver phone must be exactly 10 digits', 'danger');
+    }
+
+    setSavingStock(true);
+    try {
+      const payload = {
+        ...formHeader,
+        warehouse_id: parseInt(formHeader.warehouse_id),
+        items: items.map(i => ({
+          warehouse_product_id: i.warehouse_product_id,
+          warehouse_product_qty: i.warehouse_product_qty
+        }))
+      };
+
+      const res = await fetch('/api/warehouse-stock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) throw new Error('Save failed');
+
+      showToast('✅ Stock saved successfully');
+      setFormHeader({
+        warehouse_id: '',
+        warehouse_stock_date: getTodayDate(),
+        warehouse_vehicle_number: '',
+        warehouse_driver_name: '',
+        warehouse_driver_phone: '',
+        warehouse_bilty_number: '',
+        warehouse_stock_notes: ''
+      });
+      setItems([]);
+      setShowModal(false);
+      fetchStockEntries();
+      fetchInventory();
+    } catch (e) {
+      showToast(e.message, 'danger');
+    } finally {
+      setSavingStock(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchWarehouses();
+    fetchProducts();
+    fetchInventory();
+    fetchStockEntries();
+  }, []);
+
+  // Part 1: Export Inventory
+  const exportInventoryExcel = () => {
+    if (filteredInventory.length === 0) {
+      showToast('No inventory data to download', 'warning');
+      return;
+    }
+
+    const data = filteredInventory.map(row => ({
+      'Warehouse': row.warehouse_name || '—',
+      'Total Stock': row.total_stock_qty || 0,
+      'Products': row.products || '—',
+      'Last Updated': row.last_updated ? new Date(row.last_updated).toLocaleDateString() : '—'
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Current Inventory');
+    XLSX.writeFile(wb, `WarehouseInventory_${new Date().toISOString().split('T')[0]}.xlsx`);
+    showToast('Inventory exported successfully');
+  };
+
+  // Part 2: Export Stock Entries
+  const exportStockEntriesExcel = () => {
+    if (filteredStockEntries.length === 0) {
+      showToast('No stock entries to download', 'warning');
+      return;
+    }
+
+    const data = filteredStockEntries.flatMap(stock => {
+      if (!stock.items || stock.items.length === 0) {
+        return [{
+          'Warehouse': stock.warehouse_name || '—',
+          'Vehicle': stock.warehouse_vehicle_number || '—',
+          'Driver': stock.warehouse_driver_name || '—',
+          'Phone': stock.warehouse_driver_phone || '—',
+          'Bilty': stock.warehouse_bilty_number || '—',
+          'Product': '—',
+          'Qty': '—',
+          'Notes': stock.warehouse_stock_notes || '—',
+          'Date': stock.warehouse_stock_date ? new Date(stock.warehouse_stock_date).toLocaleDateString() : '—'
+        }];
+      }
+      return stock.items.map(item => ({
+        'Warehouse': stock.warehouse_name || '—',
+        'Vehicle': stock.warehouse_vehicle_number || '—',
+        'Driver': stock.warehouse_driver_name || '—',
+        'Phone': stock.warehouse_driver_phone || '—',
+        'Bilty': stock.warehouse_bilty_number || '—',
+        'Product': item.product_name || '—',
+        'Qty': item.qty || 0,
+        'Notes': stock.warehouse_stock_notes || '—',
+        'Date': stock.warehouse_stock_date ? new Date(stock.warehouse_stock_date).toLocaleDateString() : '—'
+      }));
+    });
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Stock Entries');
+    XLSX.writeFile(wb, `StockEntries_${new Date().toISOString().split('T')[0]}.xlsx`);
+    showToast('Stock entries exported successfully');
+  };
+
+  // Filter Part 1
+  const filteredInventory = inventoryData.filter(row => {
+    const matchWarehouse = !selectedWarehouse1 || row.warehouse_id === parseInt(selectedWarehouse1);
+    const matchSearch = !searchTerm1 ||
+      (row.warehouse_name && row.warehouse_name.toLowerCase().includes(searchTerm1.toLowerCase())) ||
+      (row.products && row.products.toLowerCase().includes(searchTerm1.toLowerCase()));
+    return matchWarehouse && matchSearch;
+  });
+
+  // Filter Part 2
+  const filteredStockEntries = stockEntries.filter(stock => {
+    const matchWarehouse = !selectedWarehouse2 || stock.warehouse_id === parseInt(selectedWarehouse2);
+    const matchSearch = !searchTerm2 ||
+      (stock.warehouse_name && stock.warehouse_name.toLowerCase().includes(searchTerm2.toLowerCase())) ||
+      (stock.warehouse_vehicle_number && stock.warehouse_vehicle_number.toLowerCase().includes(searchTerm2.toLowerCase())) ||
+      (stock.warehouse_driver_name && stock.warehouse_driver_name.toLowerCase().includes(searchTerm2.toLowerCase()));
+    return matchWarehouse && matchSearch;
+  });
+
+  return (
+    <div>
+      <Toast msg={toast.msg} type={toast.type} onClose={() => setToast({ msg: '' })} />
+
+      {/* Header with Enter Stock Button */}
+      <div className="mb-4 d-flex justify-content-between align-items-center">
+        <h4 className="fw-semibold mb-0">Warehouse Stock Management</h4>
+        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+          ➕ Enter stock
+        </button>
+      </div>
+
+      {/* ════════════════════════════════════════════════════════════════ */}
+      {/* PART 1: CURRENT STOCK BY WAREHOUSE (warehouse_inventory) */}
+      {/* ════════════════════════════════════════════════════════════════ */}
+      <div className="mb-5">
+        <h4 className="fw-semibold mb-3">📊 Part 1: Current Stock by Warehouse</h4>
+
+        <div className="card shadow-sm">
+          <div className="card-header bg-white py-3">
+            <h6 className="mb-3 fw-semibold">Real-Time Inventory</h6>
+
+            <div className="row g-2 mb-3">
+              <div className="col-md-3">
+                <label className="form-label fw-semibold small mb-1">Warehouse</label>
+                <select
+                  className="form-select form-select-sm"
+                  value={selectedWarehouse1}
+                  onChange={(e) => setSelectedWarehouse1(e.target.value)}
+                >
+                  <option value="">-- All Warehouses --</option>
+                  {warehousesInventory.map(w => (
+                    <option key={w.warehouse_id} value={w.warehouse_id}>{w.warehouse_name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-md-3">
+                <label className="form-label fw-semibold small mb-1">🔍 Search</label>
+                <input
+                  type="text"
+                  className="form-control form-control-sm"
+                  placeholder="Products..."
+                  value={searchTerm1}
+                  onChange={(e) => setSearchTerm1(e.target.value)}
+                />
+              </div>
+              <div className="col-md-2">
+                <label className="form-label fw-semibold small mb-1">From</label>
+                <input
+                  type="date"
+                  className="form-control form-control-sm"
+                  value={startDate1}
+                  onChange={(e) => setStartDate1(e.target.value)}
+                />
+              </div>
+              <div className="col-md-2">
+                <label className="form-label fw-semibold small mb-1">To</label>
+                <input
+                  type="date"
+                  className="form-control form-control-sm"
+                  value={endDate1}
+                  onChange={(e) => setEndDate1(e.target.value)}
+                />
+              </div>
+              <div className="col-md-2 d-flex align-items-end">
+                <button className="btn btn-outline-success btn-sm w-100" onClick={exportInventoryExcel}>
+                  ⬇️ Download
+                </button>
+              </div>
+            </div>
+
+            <div className="small text-muted">
+              {filteredInventory.length} warehouse(s) | Total: {filteredInventory.reduce((sum, w) => sum + (w.total_stock_qty || 0), 0)} units
+            </div>
+          </div>
+
+          <div className="card-body" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+            {loadingInventory ? (
+              <div className="text-center text-muted py-5">
+                <div className="spinner-border spinner-border-sm me-2"></div>Loading...
+              </div>
+            ) : inventoryData.length === 0 ? (
+              <div className="alert alert-info mb-0">No inventory records</div>
+            ) : filteredInventory.length === 0 ? (
+              <div className="alert alert-warning mb-0">No results match filters</div>
+            ) : (
+              <div className="table-responsive">
+                <table className="table table-sm table-bordered align-middle mb-0">
+                  <thead className="table-light">
+                    <tr>
+                      <th>Warehouse</th>
+                      <th style={{width:'100px'}} className="text-center">Total Stock</th>
+                      <th>Products (Qty)</th>
+                      <th style={{width:'120px'}}>Last Updated</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredInventory.map((w) => (
+                      <tr key={w.warehouse_id}>
+                        <td className="small fw-semibold">{w.warehouse_name}</td>
+                        <td className="text-center fw-bold text-success">{w.total_stock_qty}</td>
+                        <td className="small">
+                          {w.products ? w.products.split(', ').map((p, i) => <div key={i}>• {p}</div>) : '—'}
+                        </td>
+                        <td className="small">{w.last_updated ? new Date(w.last_updated).toLocaleDateString() : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ════════════════════════════════════════════════════════════════ */}
+      {/* PART 2: STOCK ENTRIES HISTORY (warehouse_stock + warehouse_stock_items) */}
+      {/* ════════════════════════════════════════════════════════════════ */}
+      <div>
+        <h4 className="fw-semibold mb-3">📦 Part 2: Stock Entries History</h4>
+
+        <div className="card shadow-sm">
+          <div className="card-header bg-white py-3">
+            <h6 className="mb-3 fw-semibold">Stock Transactions</h6>
+
+            <div className="row g-2 mb-3">
+              <div className="col-md-3">
+                <label className="form-label fw-semibold small mb-1">Warehouse</label>
+                <select
+                  className="form-select form-select-sm"
+                  value={selectedWarehouse2}
+                  onChange={(e) => setSelectedWarehouse2(e.target.value)}
+                >
+                  <option value="">-- All Warehouses --</option>
+                  {warehousesInventory.map(w => (
+                    <option key={w.warehouse_id} value={w.warehouse_id}>{w.warehouse_name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-md-3">
+                <label className="form-label fw-semibold small mb-1">🔍 Search</label>
+                <input
+                  type="text"
+                  className="form-control form-control-sm"
+                  placeholder="Vehicle/Driver..."
+                  value={searchTerm2}
+                  onChange={(e) => setSearchTerm2(e.target.value)}
+                />
+              </div>
+              <div className="col-md-2">
+                <label className="form-label fw-semibold small mb-1">From</label>
+                <input
+                  type="date"
+                  className="form-control form-control-sm"
+                  value={startDate2}
+                  onChange={(e) => setStartDate2(e.target.value)}
+                />
+              </div>
+              <div className="col-md-2">
+                <label className="form-label fw-semibold small mb-1">To</label>
+                <input
+                  type="date"
+                  className="form-control form-control-sm"
+                  value={endDate2}
+                  onChange={(e) => setEndDate2(e.target.value)}
+                />
+              </div>
+              <div className="col-md-2 d-flex align-items-end">
+                <button className="btn btn-outline-success btn-sm w-100" onClick={exportStockEntriesExcel}>
+                  ⬇️ Download
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Date Filter Buttons */}
+            <div className="row g-2 mb-3">
+              <div className="col-12">
+                <label className="form-label fw-semibold small mb-2">📅 Quick Filters:</label>
+                <div className="btn-group btn-group-sm w-100" role="group">
+                  <button
+                    type="button"
+                    className="btn btn-outline-primary active"
+                    onClick={() => {
+                      const today = new Date();
+                      const days2 = new Date(today.getTime() - 2 * 24 * 60 * 60 * 1000);
+                      const startDate = days2.toISOString().split('T')[0];
+                      const endDate = today.toISOString().split('T')[0];
+                      setStartDate2(startDate);
+                      setEndDate2(endDate);
+                      fetchStockEntries(startDate, endDate);
+                    }}
+                  >
+                    Last 2 Days ✓
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline-primary"
+                    onClick={() => {
+                      const today = new Date();
+                      const days7 = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+                      const startDate = days7.toISOString().split('T')[0];
+                      const endDate = today.toISOString().split('T')[0];
+                      setStartDate2(startDate);
+                      setEndDate2(endDate);
+                      fetchStockEntries(startDate, endDate);
+                    }}
+                  >
+                    Last 7 Days
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline-primary"
+                    onClick={() => {
+                      const today = new Date();
+                      const days14 = new Date(today.getTime() - 14 * 24 * 60 * 60 * 1000);
+                      const startDate = days14.toISOString().split('T')[0];
+                      const endDate = today.toISOString().split('T')[0];
+                      setStartDate2(startDate);
+                      setEndDate2(endDate);
+                      fetchStockEntries(startDate, endDate);
+                    }}
+                  >
+                    Last 14 Days
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline-primary"
+                    onClick={() => {
+                      const today = new Date();
+                      const days30 = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+                      const startDate = days30.toISOString().split('T')[0];
+                      const endDate = today.toISOString().split('T')[0];
+                      setStartDate2(startDate);
+                      setEndDate2(endDate);
+                      fetchStockEntries(startDate, endDate);
+                    }}
+                  >
+                    Last 30 Days
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary"
+                    onClick={() => {
+                      setStartDate2('');
+                      setEndDate2('');
+                      setSearchTerm2('');
+                      setSelectedWarehouse2('');
+                    }}
+                  >
+                    Clear All
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="small text-muted">
+              📍 Showing: {filteredStockEntries.length} entries | 📦 Total items: {filteredStockEntries.reduce((sum, s) => sum + (s.items ? s.items.length : 0), 0)}
+            </div>
+          </div>
+
+          <div className="card-body" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+            {loadingStockEntries ? (
+              <div className="text-center text-muted py-5">
+                <div className="spinner-border spinner-border-sm me-2"></div>Loading...
+              </div>
+            ) : stockEntries.length === 0 ? (
+              <div className="alert alert-info mb-0">No stock entries</div>
+            ) : filteredStockEntries.length === 0 ? (
+              <div className="alert alert-warning mb-0">No results match filters</div>
+            ) : (
+              <div className="table-responsive">
+                <table className="table table-sm table-bordered align-middle mb-0">
+                  <thead className="table-light">
+                    <tr>
+                      <th>Warehouse</th>
+                      <th>Vehicle</th>
+                      <th>Driver</th>
+                      <th>Product</th>
+                      <th style={{width:'80px'}} className="text-center">Qty</th>
+                      <th style={{width:'120px'}}>Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredStockEntries.flatMap((stock, idx) =>
+                      !stock.items || stock.items.length === 0 ? (
+                        <tr key={`${stock.warehouse_stock_id}-empty`}>
+                          <td className="small fw-semibold">{stock.warehouse_name || '—'}</td>
+                          <td className="small">{stock.warehouse_vehicle_number || '—'}</td>
+                          <td className="small">{stock.warehouse_driver_name || '—'}</td>
+                          <td colSpan="2" className="small text-muted">—</td>
+                          <td className="small">{stock.warehouse_stock_date ? new Date(stock.warehouse_stock_date).toLocaleDateString() : '—'}</td>
+                        </tr>
+                      ) : (
+                        stock.items.map((item, i) => (
+                          <tr key={`${stock.warehouse_stock_id}-${i}`}>
+                            <td className="small fw-semibold">{stock.warehouse_name || '—'}</td>
+                            <td className="small">{stock.warehouse_vehicle_number || '—'}</td>
+                            <td className="small">{stock.warehouse_driver_name || '—'}</td>
+                            <td className="small">{item.product_name || '—'}</td>
+                            <td className="text-center fw-semibold">{item.qty}</td>
+                            <td className="small">{stock.warehouse_stock_date ? new Date(stock.warehouse_stock_date).toLocaleDateString() : '—'}</td>
+                          </tr>
+                        ))
+                      )
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ════════════════════════════════════════════════════════════════ */}
+      {/* ENTER STOCK MODAL */}
+      {/* ════════════════════════════════════════════════════════════════ */}
+      {showModal && (
+        <div className="modal d-block" tabIndex="-1" style={{background:'rgba(0,0,0,0.45)'}}>
+          <div className="modal-dialog modal-dialog-centered modal-lg">
+            <div className="modal-content">
+              <form onSubmit={handleSaveStock}>
+                <div className="modal-header">
+                  <h5 className="modal-title">➕ Enter stock inventory</h5>
+                  <button type="button" className="btn-close" onClick={() => setShowModal(false)}></button>
+                </div>
+                <div className="modal-body">
+                  {/* Warehouse & Date Section */}
+                  <div className="mb-4 p-3 border rounded" style={{ background: '#f9f9f9' }}>
+                    <h6 className="fw-semibold mb-3 text-primary">Stock Entry Details</h6>
+
+                    <div className="row g-3 mb-3">
+                      <div className="col-md-6">
+                        <label className="form-label fw-semibold">Warehouse *</label>
+                        <select
+                          className="form-select"
+                          value={formHeader.warehouse_id}
+                          onChange={(e) => setFormHeader({...formHeader, warehouse_id: e.target.value})}
+                          required
+                        >
+                          <option value="">-- Select Warehouse --</option>
+                          {warehousesInventory.map(w => (
+                            <option key={w.warehouse_id} value={w.warehouse_id}>{w.warehouse_name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label fw-semibold">Stock Date *</label>
+                        <input
+                          type="date"
+                          className="form-control"
+                          value={formHeader.warehouse_stock_date}
+                          onChange={(e) => setFormHeader({...formHeader, warehouse_stock_date: e.target.value})}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    {/* Vehicle, Driver, Phone in one row */}
+                    <div className="row g-2 mb-3">
+                      <div className="col-md-4">
+                        <label className="form-label fw-semibold">Vehicle Number</label>
+                        <input
+                          type="text"
+                          className="form-control text-uppercase"
+                          value={formHeader.warehouse_vehicle_number}
+                          onChange={(e) => setFormHeader({...formHeader, warehouse_vehicle_number: e.target.value.toUpperCase()})}
+                          placeholder="e.g., UP32AB1234"
+                        />
+                      </div>
+                      <div className="col-md-4">
+                        <label className="form-label fw-semibold">Driver Name</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={formHeader.warehouse_driver_name}
+                          onChange={(e) => setFormHeader({...formHeader, warehouse_driver_name: e.target.value})}
+                          placeholder="Driver name"
+                        />
+                      </div>
+                      <div className="col-md-4">
+                        <label className="form-label fw-semibold">Driver Phone</label>
+                        <input
+                          type="tel"
+                          className={`form-control ${formHeader.warehouse_driver_phone && formHeader.warehouse_driver_phone.length !== 10 ? 'is-invalid' : ''}`}
+                          value={formHeader.warehouse_driver_phone}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '');
+                            setFormHeader({...formHeader, warehouse_driver_phone: val});
+                          }}
+                          placeholder="10 digits"
+                          maxLength="10"
+                        />
+                        {formHeader.warehouse_driver_phone && formHeader.warehouse_driver_phone.length !== 10 && (
+                          <small className="text-danger d-block mt-1">⚠️ Must be exactly 10 digits</small>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mb-3">
+                      <label className="form-label fw-semibold">Bilty Number</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={formHeader.warehouse_bilty_number}
+                        onChange={(e) => setFormHeader({...formHeader, warehouse_bilty_number: e.target.value})}
+                        placeholder="Transport receipt"
+                      />
+                    </div>
+
+                    <div className="mb-3">
+                      <label className="form-label fw-semibold">Stock Notes</label>
+                      <textarea
+                        className="form-control"
+                        value={formHeader.warehouse_stock_notes}
+                        onChange={(e) => setFormHeader({...formHeader, warehouse_stock_notes: e.target.value})}
+                        placeholder="Notes (optional)"
+                        rows="2"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Add Products Section */}
+                  {formHeader.warehouse_id && (
+                    <div className="mb-4 p-3 border rounded" style={{ background: '#f0f8ff', borderColor: '#b0d4f1' }}>
+                      <h6 className="fw-bold text-primary text-uppercase small mb-3">➕ Add Products</h6>
+
+                      <div className="row g-2 mb-3">
+                        <div className="col-md-7">
+                          <select
+                            className="form-select form-select-sm"
+                            value={formItem.warehouse_product_id}
+                            onChange={(e) => setFormItem({...formItem, warehouse_product_id: e.target.value})}
+                          >
+                            <option value="">-- Select Product --</option>
+                            {products.map(p => (
+                              <option key={p.product_id} value={p.product_id}>{p.product_name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="col-md-5">
+                          <input
+                            type="number"
+                            className="form-control form-control-sm"
+                            value={formItem.warehouse_product_qty}
+                            onChange={(e) => setFormItem({...formItem, warehouse_product_qty: e.target.value})}
+                            placeholder="Qty"
+                            min="1"
+                          />
+                        </div>
+                      </div>
+                      <button type="button" className="btn btn-sm btn-outline-primary w-100" onClick={handleAddItem}>
+                        + Add Item
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Products List */}
+                  {items.length > 0 && (
+                    <div className="mb-4">
+                      <h6 className="fw-semibold text-muted mb-2">Products ({items.length})</h6>
+                      <div className="table-responsive" style={{ maxHeight: '150px', overflowY: 'auto' }}>
+                        <table className="table table-sm table-bordered mb-0">
+                          <thead className="table-light">
+                            <tr>
+                              <th>Product</th>
+                              <th style={{width:'70px'}}>Qty</th>
+                              <th style={{width:'50px'}}>Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {items.map((item) => (
+                              <tr key={item.temp_id}>
+                                <td className="small">{item.product_name}</td>
+                                <td className="small fw-semibold">{item.warehouse_product_qty}</td>
+                                <td className="text-center">
+                                  <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => handleRemoveItem(item.temp_id)}>
+                                    ✕
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary" disabled={savingStock || items.length === 0}>
+                    {savingStock ? <span className="spinner-border spinner-border-sm me-2"></span> : null}
+                    Save stock
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('app-root')).render(<WarehouseStockApp />);
+</script>
+
+<%- include('../partials/footer') %>

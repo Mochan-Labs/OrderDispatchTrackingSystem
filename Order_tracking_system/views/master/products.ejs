@@ -228,6 +228,7 @@ function ProductsApp() {
                       onChange={e => setForm({...form, product_name: e.target.value})}
                       placeholder="e.g. GOLD"
                       required
+                      disabled={editId !== null}
                     />
                   </div>
                   <div className="mb-3">

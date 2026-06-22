@@ -40,7 +40,7 @@ function ensureDealer(req, res, next) {
 const VALID_TRANSITIONS = {
   ORDER_PLACED:         ['ACCEPTED', 'ON_HOLD'],
   ACCEPTED:             ['ON_HOLD', 'DISPATCHED'],
-  ON_HOLD:              ['ACCEPTED', 'DISPATCHED'],
+  ON_HOLD:              ['ORDER_PLACED', 'ACCEPTED', 'DISPATCHED'],  // Can unhold back to ORDER_PLACED
   DISPATCHED:           ['FULLY_DISPATCHED', 'PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD'],
   FULLY_DISPATCHED:     ['DISPATCH_ON_HOLD'],
   PARTIALLY_DISPATCHED: ['FULLY_DISPATCHED', 'DISPATCH_ON_HOLD'],
@@ -56,9 +56,7 @@ const ITEMS_SUBQUERY = `
       'product_id',    oi.product_id,
       'product_name',  p.product_name,
       'order_bags',    oi.order_bags,
-      'order_quantity', oi.order_quantity::text,
-      'order_dispatch_bags', oi.order_dispatch_bags,
-      'order_dispatch_quantity', oi.order_dispatch_quantity::text
+      'order_quantity', oi.order_quantity::text
     ) ORDER BY oi.item_id), '[]'::json)
    FROM odts.dealer_order_items oi
    LEFT JOIN odts.product_master p ON p.product_id = oi.product_id
@@ -109,29 +107,8 @@ function toOrderShape(row) {
   if (row.dispatch_id) {
     order.dispatch = {
       dispatch_id:                   row.dispatch_id,
-      vehicle_no:                    row.dispatch_vehicle_number || null,
-      driver_name:                   row.dispatch_driver_name || null,
-      driver_phone:                  row.dispatch_driver_phone || null,
-      bilty_number:                  row.bilty_number || null,
-      actual_loading_location_code:  row.actual_loading_location_code || null,
-      actual_loading_location_desc:  row.actual_loading_location_desc || row.actual_loading_location_code || null,
-      dispatch_date:                 row.dispatch_created_at || null,
-      expected_delivery:             null,
-      actual_delivery:               null,
-      image_url:                     row.image_url || null,
-      image_type:                    row.image_type || null,
-      image_original_size:           row.image_original_size || null,
-      image_compressed_size:         row.image_compressed_size || null,
-      image_uploaded_at:             row.image_uploaded_at || null,
+      // Dispatch details now fetched from order_dispatch_items table
     };
-    // Also add dispatch fields at top level for direct access
-    order.dispatch_vehicle_number = row.dispatch_vehicle_number || null;
-    order.dispatch_driver_name = row.dispatch_driver_name || null;
-    order.dispatch_driver_phone = row.dispatch_driver_phone || null;
-    order.bilty_number = row.bilty_number || null;
-    order.actual_loading_location_code = row.actual_loading_location_code || null;
-    order.actual_loading_location_desc = row.actual_loading_location_desc || row.actual_loading_location_code || null;
-    order.dispatch_created_at = row.dispatch_created_at || null;
   }
   return order;
 }
@@ -253,9 +230,7 @@ async function fetchOrders({ dealerId, startDate, endDate }) {
            lt.warehouse_name  AS load_type_desc,
            pl.warehouse_name  AS preferred_location_desc,
            al.warehouse_name  AS actual_loading_location_desc,
-           od.dispatch_id, od.dispatch_vehicle_number, od.driver_name AS dispatch_driver_name, od.driver_phone AS dispatch_driver_phone,
-           od.bilty_number, od.actual_loading_location_code, od.created_at AS dispatch_created_at,
-           od.image_url, od.image_type, od.image_original_size, od.image_compressed_size, od.image_uploaded_at,
+           od.dispatch_id,
            ${ITEMS_SUBQUERY}
     FROM odts.dealer_orders o
     LEFT JOIN odts.dealer_master       d  ON d.dealer_id  = o.dealer_id
@@ -263,7 +238,7 @@ async function fetchOrders({ dealerId, startDate, endDate }) {
     LEFT JOIN odts.warehouse_master lt ON lt.warehouse_type = 'loading_type'     AND lt.warehouse_code = o.load_type_code
     LEFT JOIN odts.warehouse_master pl ON pl.warehouse_type = 'loading_location' AND pl.warehouse_code = o.preferred_location_code
     LEFT JOIN odts.order_dispatch od ON od.order_id  = o.order_id
-    LEFT JOIN odts.warehouse_master al ON al.warehouse_type = 'loading_location' AND al.warehouse_code = od.actual_loading_location_code
+    LEFT JOIN odts.warehouse_master al ON al.warehouse_type = 'loading_location' AND al.warehouse_code = o.preferred_location_code
     ${where}
     ORDER BY o.order_date DESC
   `;
@@ -346,6 +321,59 @@ router.get('/orders', ensureDealer, (req, res) => {
   }
   console.log(`[/orders-render] Passing to view: isDispatcher=${isDispatcher}, isAdmin=${isAdmin}, isAdminOrOffice=${isAdminOrOffice}, canViewAllOrders=${canViewAllOrders}`);
   res.render('orders/index', { user: req.session.user, isAdmin, canViewAllOrders, isAdminOrOffice, isDispatcher });
+});
+
+// Admin: Dealer Orders (all dealers, T-2 days default)
+// Shows same interface as dealer view, but for all dealers
+router.get('/admin/dealer-orders', ensureAdmin, async (req, res) => {
+  // Handle edit action
+  if (req.query.action === 'edit' && req.query.id) {
+    try {
+      // Fetch the order to get dealer_id
+      const orderResult = await pool.query('SELECT dealer_id FROM odts.dealer_orders WHERE order_id = $1', [req.query.id]);
+      if (orderResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+      const dealerId = orderResult.rows[0].dealer_id;
+      return res.render('orders/new', {
+        user: req.session.user,
+        editOrderId: req.query.id,
+        editDealerId: dealerId,  // Pass dealer_id for loading parties
+        returnUrl: '/admin/dealer-orders'  // Return to admin dealer orders view after save
+      });
+    } catch (e) {
+      console.error('Error fetching order for edit:', e);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  }
+
+  const defaultStartDate = new Date();
+  defaultStartDate.setDate(defaultStartDate.getDate() - 2); // T-2 days
+  const startDate = req.query.startDate || defaultStartDate.toISOString().split('T')[0];
+  const endDate = req.query.endDate || new Date().toISOString().split('T')[0];
+  res.render('orders/index', {
+    user: req.session.user,
+    isAdmin: false,
+    canViewAllOrders: true,  // Can view all dealers' orders
+    isAdminOrOffice: false,  // No special admin actions (like Edit Dispatch)
+    isDispatcher: false,
+    defaultStartDate: startDate,
+    defaultEndDate: endDate
+  });
+});
+
+// Admin: Dispatch Orders (all dispatcher orders, T-2 days default)
+router.get('/admin/dispatch-orders', ensureAdmin, (req, res) => {
+  const defaultStartDate = new Date();
+  defaultStartDate.setDate(defaultStartDate.getDate() - 2); // T-2 days
+  const startDate = req.query.startDate || defaultStartDate.toISOString().split('T')[0];
+  const endDate = req.query.endDate || new Date().toISOString().split('T')[0];
+  res.render('dispatcher/dashboard', {
+    user: req.session.user,
+    defaultStartDate: startDate,
+    defaultEndDate: endDate,
+    isAdminDispatchOrders: true
+  });
 });
 
 router.get('/office/dashboard', ensureAdminOrOfficeExecutive, (req, res) => {
@@ -605,8 +633,7 @@ router.get('/api/dealer/orders/:id', ensureDealer, async (req, res) => {
              lt.warehouse_name AS load_type_desc,
              pl.warehouse_name AS preferred_location_desc,
              al.warehouse_name AS actual_loading_location_desc,
-             od.dispatch_id, od.dispatch_vehicle_number, od.driver_name AS dispatch_driver_name, od.driver_phone AS dispatch_driver_phone,
-             od.bilty_number, od.actual_loading_location_code, od.created_at AS dispatch_created_at,
+             od.dispatch_id,
              ${ITEMS_SUBQUERY}
       FROM odts.dealer_orders o
       LEFT JOIN odts.dealer_master       d  ON d.dealer_id  = o.dealer_id
@@ -614,7 +641,7 @@ router.get('/api/dealer/orders/:id', ensureDealer, async (req, res) => {
       LEFT JOIN odts.warehouse_master lt ON lt.warehouse_type = 'loading_type'     AND lt.warehouse_code = o.load_type_code
       LEFT JOIN odts.warehouse_master pl ON pl.warehouse_type = 'loading_location' AND pl.warehouse_code = o.preferred_location_code
       LEFT JOIN odts.order_dispatch od ON od.order_id  = o.order_id
-      LEFT JOIN odts.warehouse_master al ON al.warehouse_type = 'loading_location' AND al.warehouse_code = od.actual_loading_location_code
+      LEFT JOIN odts.warehouse_master al ON al.warehouse_type = 'loading_location' AND al.warehouse_code = o.preferred_location_code
       WHERE o.order_id = $1
     `, [parseInt(req.params.id)]);
     if (!result.rows.length) return res.status(404).json({ error: 'Order not found' });
@@ -959,9 +986,7 @@ router.put('/api/dealer/orders/:id', ensureDealer, async (req, res) => {
     item.order_quantity = parseFloat((parseInt(item.order_bags, 10) * KG_PER_BAG / 1000).toFixed(3));
   }
 
-  const dealer_id = req.session.user.dealer_id;
-  if (!dealer_id) return res.status(400).json({ error: 'No dealer linked to this account.' });
-
+  const userRole = req.session.user.role;
   const userId = req.session.user.id;
   const totalQty = items.reduce((sum, i) => sum + i.order_quantity, 0);
   const firstProduct = parseInt(items[0].product_id, 10);
@@ -970,26 +995,42 @@ router.put('/api/dealer/orders/:id', ensureDealer, async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Check that order exists and is in ORDER_PLACED status
-    const existing = await client.query(
-      'SELECT * FROM odts.dealer_orders WHERE order_id = $1 AND dealer_id = $2',
-      [orderId, dealer_id]
+    // Fetch the order first to get its dealer_id
+    const orderResult = await client.query(
+      'SELECT * FROM odts.dealer_orders WHERE order_id = $1',
+      [orderId]
     );
-    if (!existing.rows.length) return res.status(404).json({ error: 'Order not found' });
-    if (existing.rows[0].order_status !== 'ORDER_PLACED') {
+    if (!orderResult.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const order = orderResult.rows[0];
+    const order_dealer_id = order.dealer_id;
+
+    // Permission check: dealer can only edit their own orders, admin can edit any order
+    if (userRole === 'DEALER' && req.session.user.dealer_id !== order_dealer_id) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'You do not have permission to edit this order' });
+    }
+
+    // Check order status
+    if (order.order_status !== 'ORDER_PLACED') {
+      await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Can only edit orders in ORDER_PLACED status' });
     }
 
     // Calculate old quantity for limit recalculation
-    const oldQuantity = parseFloat(existing.rows[0].order_quantity) || 0;
+    const oldQuantity = parseFloat(order.order_quantity) || 0;
     const quantityDiff = totalQty - oldQuantity;
 
     // Check daily limit only if quantity increased
     if (quantityDiff > 0) {
-      const usage = await getDealerDailyUsage(dealer_id);
+      const usage = await getDealerDailyUsage(order_dealer_id);
       const projectedTotal = usage.used_today + quantityDiff;
 
       if (usage.daily_limit > 0 && projectedTotal > usage.daily_limit) {
+        await client.query('ROLLBACK');
         return res.status(400).json({
           error: `Daily limit exceeded. Additional: ${quantityDiff.toFixed(3)} MT, Remaining: ${usage.remaining.toFixed(3)} MT`,
           daily_limit: usage.daily_limit,

@@ -28,8 +28,5 @@ AND order_id IN (
     WHERE dispatch_status IS NOT NULL
 );
 
--- Step 6: Remove dispatch_status column from order_dispatch
-ALTER TABLE odts.order_dispatch
-DROP COLUMN IF EXISTS dispatch_status;
 
 

@@ -1829,22 +1829,27 @@ function App() {
                             👁️ View
                           </button>
 
-                          {/* Dealer: Hold on ORDER_PLACED */}
-                          {!IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
+                          {/* Hold on ORDER_PLACED */}
+                          {o.order_status === 'ORDER_PLACED' && (
                             <button className="btn btn-sm btn-outline-secondary me-1" onClick={() => setHoldOrder(o)}>
                               ⏸️ Hold
                             </button>
                           )}
 
-                          {/* Dealer: Edit on ORDER_PLACED */}
-                          {!IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
-                            <button className="btn btn-sm btn-outline-info me-1" onClick={() => window.location.href=`/orders?action=edit&id=${o.order_id}`}>
+                          {/* Edit on ORDER_PLACED */}
+                          {o.order_status === 'ORDER_PLACED' && (
+                            <button className="btn btn-sm btn-outline-info me-1" onClick={() => {
+                              const editUrl = CAN_VIEW_ALL && !IS_ADMIN_OR_OFFICE
+                                ? `/admin/dealer-orders?action=edit&id=${o.order_id}`
+                                : `/orders?action=edit&id=${o.order_id}`;
+                              window.location.href = editUrl;
+                            }}>
                               ✏️ Edit
                             </button>
                           )}
 
-                          {/* Dealer: Unhold on ON_HOLD (dealer held) */}
-                          {!IS_ADMIN && o.order_status === 'ON_HOLD' && o.on_hold_by_role === 'DEALER' && (
+                          {/* Unhold on ON_HOLD */}
+                          {o.order_status === 'ON_HOLD' && (
                             <button className="btn btn-sm btn-outline-warning me-1" onClick={() => changeStatus(o.order_id, 'ORDER_PLACED')}>
                               ⏸️ Unhold
                             </button>
@@ -1888,15 +1893,15 @@ function App() {
                             <span className="badge bg-secondary" style={{ lineHeight: '1.5' }}>🔒 Locked</span>
                           )}
 
-                          {/* Repeat Button - Dealer */}
-                          {!IS_ADMIN_OR_OFFICE && (
+                          {/* Repeat Button - Dealer or Admin viewing dealer orders */}
+                          {!IS_ADMIN_OR_OFFICE && !CAN_VIEW_ALL && (
                             <a className="btn btn-sm btn-outline-primary me-1" href={`/orders?action=new&repeat=${o.order_id}`}>
                               🔁 Repeat
                             </a>
                           )}
 
-                          {/* Repeat Button - Admin/Office */}
-                          {IS_ADMIN_OR_OFFICE && (
+                          {/* Repeat Button - Admin/Office or Admin viewing dealer orders */}
+                          {(IS_ADMIN_OR_OFFICE || (CAN_VIEW_ALL && !IS_ADMIN_OR_OFFICE)) && (
                             <button className="btn btn-sm btn-outline-primary me-1" onClick={() => setRepeatOrder(o)}>
                               🔁 Repeat
                             </button>
@@ -1916,7 +1921,7 @@ function App() {
       {selectedOrder && <DispatchModal order={selectedOrder} onClose={() => setSelectedOrder(null)} onRefresh={load} />}
       {showCreateForDealer && <CreateForDealerModal onClose={() => setShowCreateForDealer(false)} onSaved={onOrderPlaced} />}
       {repeatOrder && <CreateForDealerModal repeatFrom={repeatOrder} onClose={() => setRepeatOrder(null)} onSaved={onOrderPlaced} />}
-      {holdOrder && <OnHoldModal order={holdOrder} onConfirm={handleDealerHold} onClose={() => setHoldOrder(null)} requireReason={IS_ADMIN} />}
+      {holdOrder && <OnHoldModal order={holdOrder} onConfirm={handleDealerHold} onClose={() => setHoldOrder(null)} requireReason={IS_ADMIN_OR_OFFICE} />}
     </div>
   );
 }

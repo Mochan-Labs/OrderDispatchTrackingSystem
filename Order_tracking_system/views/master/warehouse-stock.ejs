@@ -1,0 +1,359 @@
+<%- include('../partials/header') %>
+<script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.5/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/dashboard">Dashboard</a></li>
+    <li class="breadcrumb-item"><a href="#">Master Data</a></li>
+    <li class="breadcrumb-item active">Warehouse Stock</li>
+  </ol>
+</nav>
+<div id="app-root"></div>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const EMPTY_FORM = { warehouse_id: '', product_id: '', warehouse_product_qty: 0, warehouse_vehicle_number: '', warehouse_driver_name: '', warehouse_driver_phone: '', warehouse_bilty_number: '', warehouse_stock_notes: '' };
+
+function Toast({ msg, type, onClose }) {
+  if (!msg) return null;
+  return (
+    <div className={`alert alert-${type} alert-dismissible d-flex align-items-center`} role="alert">
+      <span>{msg}</span>
+      <button type="button" className="btn-close ms-auto" onClick={onClose}></button>
+    </div>
+  );
+}
+
+function WarehouseStockApp() {
+  const [stocks, setStocks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [showModal, setShowModal] = useState(false);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [editId, setEditId] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState({ msg: '', type: 'success' });
+  const [warehouses, setWarehouses] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [sortCol, setSortCol] = useState('warehouse_name');
+  const [sortAsc, setSortAsc] = useState(true);
+
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast({ msg: '', type: 'success' }), 4000);
+  };
+
+  const fetchStocks = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/warehouse-stock');
+      if (!res.ok) throw new Error(await res.text());
+      setStocks(await res.json());
+    } catch (e) {
+      showToast('Failed to load warehouse stock: ' + e.message, 'danger');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchDropdowns = async () => {
+    try {
+      const [whRes, prodRes] = await Promise.all([
+        fetch('/api/warehouses-dropdown'),
+        fetch('/api/products-dropdown')
+      ]);
+      setWarehouses(await whRes.json());
+      setProducts(await prodRes.json());
+    } catch (e) {
+      showToast('Failed to load dropdowns: ' + e.message, 'danger');
+    }
+  };
+
+  useEffect(() => {
+    fetchStocks();
+    fetchDropdowns();
+  }, []);
+
+  const exportExcel = () => {
+    const data = filtered.map(s => ({
+      'Warehouse': s.warehouse_name,
+      'Product': s.product_name,
+      'Quantity': s.warehouse_product_qty,
+      'Vehicle': s.warehouse_vehicle_number || '',
+      'Driver': s.warehouse_driver_name || '',
+      'Driver Phone': s.warehouse_driver_phone || '',
+      'Bilty': s.warehouse_bilty_number || '',
+      'Notes': s.warehouse_stock_notes || '',
+      'Updated At': s.updated_at ? new Date(s.updated_at).toLocaleDateString() : ''
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Warehouse Stock');
+    XLSX.writeFile(wb, 'WarehouseStock.xlsx');
+  };
+
+  const openAdd = () => { setForm(EMPTY_FORM); setEditId(null); setShowModal(true); };
+  const openEdit = (s) => {
+    setForm({
+      warehouse_id: s.warehouse_id,
+      product_id: s.product_id,
+      warehouse_product_qty: s.warehouse_product_qty,
+      warehouse_vehicle_number: s.warehouse_vehicle_number || '',
+      warehouse_driver_name: s.warehouse_driver_name || '',
+      warehouse_driver_phone: s.warehouse_driver_phone || '',
+      warehouse_bilty_number: s.warehouse_bilty_number || '',
+      warehouse_stock_notes: s.warehouse_stock_notes || ''
+    });
+    setEditId(s.warehouse_stock_id);
+    setShowModal(true);
+  };
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    if (!form.warehouse_id || !form.product_id || !form.warehouse_product_qty) {
+      return showToast('Warehouse, Product, and Quantity are required', 'warning');
+    }
+    setSaving(true);
+    try {
+      const url = editId ? `/api/warehouse-stock/${editId}` : '/api/warehouse-stock';
+      const method = editId ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Save failed');
+      showToast(editId ? 'Stock updated successfully' : 'Stock added successfully');
+      setShowModal(false);
+      fetchStocks();
+    } catch (e) {
+      showToast(e.message, 'danger');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('Delete this entry?')) return;
+    try {
+      const res = await fetch(`/api/warehouse-stock/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed');
+      showToast('Entry deleted successfully');
+      fetchStocks();
+    } catch (e) {
+      showToast(e.message, 'danger');
+    }
+  };
+
+  const handleSort = (col) => {
+    if (sortCol === col) setSortAsc(!sortAsc);
+    else { setSortCol(col); setSortAsc(true); }
+  };
+
+  const SortIcon = ({ col }) => {
+    if (sortCol !== col) return <span className="text-muted ms-1">⇅</span>;
+    return <span className="ms-1">{sortAsc ? '↑' : '↓'}</span>;
+  };
+
+  const filtered = stocks
+    .filter(s =>
+      (s.warehouse_name || '').toLowerCase().includes(search.toLowerCase()) ||
+      (s.product_name || '').toLowerCase().includes(search.toLowerCase())
+    )
+    .sort((a, b) => {
+      let va = a[sortCol], vb = b[sortCol];
+      if (typeof va === 'string') va = va.toLowerCase();
+      if (typeof vb === 'string') vb = vb.toLowerCase();
+      if (va < vb) return sortAsc ? -1 : 1;
+      if (va > vb) return sortAsc ? 1 : -1;
+      return 0;
+    });
+
+  return (
+    <div>
+      <Toast msg={toast.msg} type={toast.type} onClose={() => setToast({ msg: '' })} />
+
+      <div className="card shadow-sm">
+        <div className="card-header bg-white d-flex align-items-center justify-content-between py-3">
+          <h5 className="mb-0 fw-semibold">Warehouse Stock Inventory</h5>
+          <div className="d-flex gap-2">
+            <button className="btn btn-outline-success btn-sm" onClick={exportExcel}>
+              ⬇️ Download Excel
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={openAdd}>
+              + Add Stock
+            </button>
+          </div>
+        </div>
+        <div className="card-body">
+          <div className="row mb-3">
+            <div className="col-md-4">
+              <input
+                className="form-control"
+                placeholder="Search warehouse or product..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+            </div>
+            <div className="col-md-8 text-end text-muted small align-self-center">
+              {filtered.length} record{filtered.length !== 1 ? 's' : ''}
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="text-center py-5">
+              <div className="spinner-border text-primary" role="status"></div>
+              <div className="mt-2 text-muted">Loading...</div>
+            </div>
+          ) : (
+            <div className="table-responsive">
+              <table className="table table-hover table-bordered align-middle mb-0">
+                <thead className="table-light">
+                  <tr>
+                    <th style={{cursor:'pointer'}} onClick={() => handleSort('warehouse_name')}>Warehouse <SortIcon col="warehouse_name"/></th>
+                    <th style={{cursor:'pointer'}} onClick={() => handleSort('product_name')}>Product <SortIcon col="product_name"/></th>
+                    <th style={{cursor:'pointer', width:'120px'}} onClick={() => handleSort('warehouse_product_qty')}>Qty <SortIcon col="warehouse_product_qty"/></th>
+                    <th style={{width:'160px'}}>Driver / Vehicle</th>
+                    <th style={{width:'90px', textAlign:'center'}}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.length === 0 ? (
+                    <tr><td colSpan="5" className="text-center text-muted py-4">No records found</td></tr>
+                  ) : filtered.map(s => (
+                    <tr key={s.warehouse_stock_id}>
+                      <td>{s.warehouse_name || '—'}</td>
+                      <td>{s.product_name || '—'}</td>
+                      <td className="fw-semibold">{s.warehouse_product_qty}</td>
+                      <td className="small">{s.warehouse_driver_name || '—'} / {s.warehouse_vehicle_number || '—'}</td>
+                      <td className="text-center">
+                        <button className="btn btn-outline-primary btn-sm me-1" onClick={() => openEdit(s)}>Edit</button>
+                        <button className="btn btn-outline-danger btn-sm" onClick={() => handleDelete(s.warehouse_stock_id)}>Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {showModal && (
+        <div className="modal d-block" tabIndex="-1" style={{background:'rgba(0,0,0,0.45)'}}>
+          <div className="modal-dialog modal-dialog-centered modal-lg">
+            <div className="modal-content">
+              <form onSubmit={handleSave}>
+                <div className="modal-header">
+                  <h5 className="modal-title">{editId ? 'Edit Stock' : 'Add Stock'}</h5>
+                  <button type="button" className="btn-close" onClick={() => setShowModal(false)}></button>
+                </div>
+                <div className="modal-body">
+                  <div className="row g-3">
+                    <div className="col-md-6">
+                      <label className="form-label fw-semibold">Warehouse <span className="text-danger">*</span></label>
+                      <select
+                        className="form-select"
+                        value={form.warehouse_id}
+                        onChange={e => setForm({...form, warehouse_id: e.target.value})}
+                        required
+                      >
+                        <option value="">-- Select Warehouse --</option>
+                        {warehouses.map(w => <option key={w.warehouse_id} value={w.warehouse_id}>{w.warehouse_name}</option>)}
+                      </select>
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label fw-semibold">Product <span className="text-danger">*</span></label>
+                      <select
+                        className="form-select"
+                        value={form.product_id}
+                        onChange={e => setForm({...form, product_id: e.target.value})}
+                        required
+                      >
+                        <option value="">-- Select Product --</option>
+                        {products.map(p => <option key={p.product_id} value={p.product_id}>{p.product_name}</option>)}
+                      </select>
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label fw-semibold">Quantity <span className="text-danger">*</span></label>
+                      <input
+                        type="number"
+                        className="form-control"
+                        value={form.warehouse_product_qty}
+                        onChange={e => setForm({...form, warehouse_product_qty: parseInt(e.target.value) || 0})}
+                        required
+                      />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label fw-semibold">Vehicle Number</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={form.warehouse_vehicle_number}
+                        onChange={e => setForm({...form, warehouse_vehicle_number: e.target.value})}
+                      />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label fw-semibold">Driver Name</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={form.warehouse_driver_name}
+                        onChange={e => setForm({...form, warehouse_driver_name: e.target.value})}
+                      />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label fw-semibold">Driver Phone</label>
+                      <input
+                        type="tel"
+                        className="form-control"
+                        value={form.warehouse_driver_phone}
+                        onChange={e => setForm({...form, warehouse_driver_phone: e.target.value})}
+                      />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label fw-semibold">Bilty Number</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={form.warehouse_bilty_number}
+                        onChange={e => setForm({...form, warehouse_bilty_number: e.target.value})}
+                      />
+                    </div>
+                    <div className="col-12">
+                      <label className="form-label fw-semibold">Stock Notes</label>
+                      <textarea
+                        className="form-control"
+                        rows="2"
+                        value={form.warehouse_stock_notes}
+                        onChange={e => setForm({...form, warehouse_stock_notes: e.target.value})}
+                        placeholder="Optional notes"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary" disabled={saving}>
+                    {saving ? <span className="spinner-border spinner-border-sm me-1"></span> : null}
+                    {editId ? 'Update' : 'Add Stock'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('app-root')).render(<WarehouseStockApp />);
+</script>
+
+<%- include('../partials/footer') %>

@@ -131,27 +131,12 @@ router.get('/api/dispatcher/orders', ensureDispatcher, async (req, res) => {
         lt.warehouse_name  AS load_type_desc,
         pl.warehouse_name  AS preferred_location_desc,
         od.dispatch_id,
-        od.dispatch_vehicle_number,
-        od.driver_name AS dispatch_driver_name,
-        od.driver_phone AS dispatch_driver_phone,
-        od.bilty_number,
-        od.actual_loading_location_code,
-        al.warehouse_name  AS actual_location_desc,
-        od.created_at AS dispatch_created_at,
-        od.image_url,
-        od.image_type,
-        od.image_original_size,
-        od.image_compressed_size,
-        od.image_uploaded_at,
         (SELECT COALESCE(json_agg(json_build_object(
             'item_id',       oi.item_id,
             'product_id',    oi.product_id,
             'product_name',  p.product_name,
             'order_bags',    oi.order_bags,
-            'order_quantity', oi.order_quantity::text,
-            'order_dispatch_bags', oi.order_dispatch_bags,
-            'order_dispatch_quantity', oi.order_dispatch_quantity::text,
-            'order_dispatch_comments', oi.order_dispatch_comments
+            'order_quantity', oi.order_quantity::text
           ) ORDER BY oi.item_id), '[]'::json)
          FROM odts.dealer_order_items oi
          LEFT JOIN odts.product_master p ON p.product_id = oi.product_id
@@ -163,7 +148,6 @@ router.get('/api/dispatcher/orders', ensureDispatcher, async (req, res) => {
       LEFT JOIN odts.warehouse_master lt ON lt.warehouse_type = 'loading_type'     AND lt.warehouse_code = o.load_type_code
       LEFT JOIN odts.warehouse_master pl ON pl.warehouse_type = 'loading_location' AND pl.warehouse_code = o.preferred_location_code
       LEFT JOIN odts.order_dispatch od ON od.order_id  = o.order_id
-      LEFT JOIN odts.warehouse_master al ON al.warehouse_type = 'loading_location' AND al.warehouse_code = od.actual_loading_location_code
       WHERE ${whereClause}
       ORDER BY o.dealer_id, o.order_date ASC
     `, values);
@@ -176,10 +160,12 @@ router.get('/api/dispatcher/orders', ensureDispatcher, async (req, res) => {
   }
 });
 
-// POST accept: ORDER_PLACED → ACCEPTED
+// POST accept: ORDER_PLACED → ACCEPTED (creates order_dispatch record)
 router.post('/api/dispatcher/orders/:id/accept', ensureDispatcher, async (req, res) => {
   try {
     const orderId = parseInt(req.params.id);
+    const userId = req.session.user.id;
+
     const existing = await pool.query(
       'SELECT order_id, order_status FROM odts.dealer_orders WHERE order_id = $1',
       [orderId]
@@ -188,13 +174,30 @@ router.post('/api/dispatcher/orders/:id/accept', ensureDispatcher, async (req, r
     if (existing.rows[0].order_status !== 'ORDER_PLACED') {
       return res.status(400).json({ error: `Order is ${existing.rows[0].order_status}, cannot accept` });
     }
+
+    // Create order_dispatch record when order is accepted
+    const dispatchExists = await pool.query(
+      'SELECT dispatch_id FROM odts.order_dispatch WHERE order_id = $1',
+      [orderId]
+    );
+
+    if (!dispatchExists.rows.length) {
+      await pool.query(
+        `INSERT INTO odts.order_dispatch (order_id, created_by, updated_by)
+         VALUES ($1, $2, $2)`,
+        [orderId, userId]
+      );
+    }
+
+    // Update order status to ACCEPTED
     await pool.query(
       `UPDATE odts.dealer_orders
           SET order_status = 'ACCEPTED', updated_by = $1, updated_at = NOW()
         WHERE order_id = $2`,
-      [req.session.user.id, orderId]
+      [userId, orderId]
     );
-    broadcastOrderUpdate({ orderId, newStatus: 'ACCEPTED', updatedBy: req.session.user.id });
+
+    broadcastOrderUpdate({ orderId, newStatus: 'ACCEPTED', updatedBy: userId });
     res.json({ success: true });
   } catch (e) {
     console.error('[Dispatcher] accept error:', e.message);
@@ -308,16 +311,13 @@ router.post('/api/dispatcher/presigned-read-url', ensureDispatcher, async (req, 
   }
 });
 
-// POST dispatch: ACCEPTED → DISPATCHED + create/update order_dispatch record
+// POST dispatch: ACCEPTED → DISPATCHED via dispatch items
+// Note: Dispatch details are now stored in order_dispatch_items table
+// This endpoint is kept for backward compatibility - it simply updates order status
 router.post('/api/dispatcher/orders/:id/dispatch', ensureDispatcher, async (req, res) => {
   try {
     const orderId = parseInt(req.params.id);
-    const { vehicle_number, driver_name, driver_phone, bilty_number, actual_loading_location_code, image_url, image_type, image_original_size, image_compressed_size } = req.body;
-
-    if (!vehicle_number?.trim())                return res.status(400).json({ error: 'Vehicle number is required' });
-    if (!driver_phone?.trim())                  return res.status(400).json({ error: 'Driver phone is required' });
-    if (!bilty_number?.trim())                  return res.status(400).json({ error: 'Bilty number is required' });
-    if (!actual_loading_location_code?.trim())  return res.status(400).json({ error: 'Actual loading location is required' });
+    const userId = req.session.user.id;
 
     const existing = await pool.query(
       'SELECT order_id, order_status FROM odts.dealer_orders WHERE order_id = $1',
@@ -328,50 +328,16 @@ router.post('/api/dispatcher/orders/:id/dispatch', ensureDispatcher, async (req,
       return res.status(400).json({ error: 'Order must be ACCEPTED before dispatching' });
     }
 
-    const userId       = req.session.user.id;
-    const vehicleUpper = vehicle_number.trim().toUpperCase();
-
-    const existingDispatch = await pool.query(
+    // Verify dispatch record exists
+    const dispatchExists = await pool.query(
       'SELECT dispatch_id FROM odts.order_dispatch WHERE order_id = $1',
       [orderId]
     );
-
-    if (existingDispatch.rows.length) {
-      await pool.query(
-        `UPDATE odts.order_dispatch
-            SET dispatch_vehicle_number      = $1,
-                driver_name                  = $2,
-                driver_phone                 = $3,
-                bilty_number                 = $4,
-                actual_loading_location_code = $5,
-                image_url                    = COALESCE($8, image_url),
-                image_type                   = COALESCE($9, image_type),
-                image_original_size          = COALESCE($10, image_original_size),
-                image_compressed_size        = COALESCE($11, image_compressed_size),
-                image_uploaded_at            = CASE WHEN $8 IS NOT NULL THEN NOW() ELSE image_uploaded_at END,
-                updated_by                   = $6,
-                updated_at                   = NOW()
-          WHERE dispatch_id = $7`,
-        [vehicleUpper, driver_name || null, driver_phone.trim(),
-         bilty_number.trim(), actual_loading_location_code.trim(),
-         userId, existingDispatch.rows[0].dispatch_id,
-         image_url || null, image_type || null, image_original_size || null, image_compressed_size || null]
-      );
-    } else {
-      await pool.query(
-        `INSERT INTO odts.order_dispatch
-           (order_id, dispatch_vehicle_number, driver_name, driver_phone,
-            bilty_number, actual_loading_location_code, image_url, image_type,
-            image_original_size, image_compressed_size, image_uploaded_at,
-            created_by, updated_by, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, NOW(), NOW())`,
-        [orderId, vehicleUpper, driver_name || null, driver_phone.trim(),
-         bilty_number.trim(), actual_loading_location_code.trim(),
-         image_url || null, image_type || null, image_original_size || null,
-         image_compressed_size || null, image_url ? 'NOW()' : null, userId]
-      );
+    if (!dispatchExists.rows.length) {
+      return res.status(400).json({ error: 'Dispatch record not found. Order must be ACCEPTED first.' });
     }
 
+    // Update order status to DISPATCHED
     await pool.query(
       `UPDATE odts.dealer_orders
           SET order_status = 'DISPATCHED', updated_by = $1, updated_at = NOW()
@@ -388,129 +354,129 @@ router.post('/api/dispatcher/orders/:id/dispatch', ensureDispatcher, async (req,
 });
 
 // PATCH /api/dispatcher/orders/:id/dispatch-quantities — update dispatch quantities in dealer_order_items
-router.patch('/api/dispatcher/orders/:id/dispatch-quantities', ensureDispatcher, async (req, res) => {
-  try {
-    const orderId = parseInt(req.params.id);
-    const { dispatchQuantities } = req.body; // Array of { item_id, dispatch_bags, dispatch_quantity }
+// router.patch('/api/dispatcher/orders/:id/dispatch-quantities', ensureDispatcher, async (req, res) => {
+//   try {
+//     const orderId = parseInt(req.params.id);
+//     const { dispatchQuantities } = req.body; // Array of { item_id, dispatch_bags, dispatch_quantity }
 
-    if (!Array.isArray(dispatchQuantities) || dispatchQuantities.length === 0) {
-      return res.status(400).json({ error: 'Dispatch quantities are required' });
-    }
+//     if (!Array.isArray(dispatchQuantities) || dispatchQuantities.length === 0) {
+//       return res.status(400).json({ error: 'Dispatch quantities are required' });
+//     }
 
-    console.log(`[Dispatcher] Updating dispatch quantities for order ${orderId}:`, JSON.stringify(dispatchQuantities, null, 2));
+//     console.log(`[Dispatcher] Updating dispatch quantities for order ${orderId}:`, JSON.stringify(dispatchQuantities, null, 2));
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
+//     const client = await pool.connect();
+//     try {
+//       await client.query('BEGIN');
 
-      // Update each item with dispatch quantities and comments
-      for (const item of dispatchQuantities) {
-        const { item_id, dispatch_bags, dispatch_quantity, dispatch_comments } = item;
+//       // Update each item with dispatch quantities and comments
+//       for (const item of dispatchQuantities) {
+//         const { item_id, dispatch_bags, dispatch_quantity, dispatch_comments } = item;
 
-        if (!item_id || dispatch_bags === undefined || dispatch_quantity === undefined) {
-          throw new Error('Invalid dispatch quantity data');
-        }
+//         if (!item_id || dispatch_bags === undefined || dispatch_quantity === undefined) {
+//           throw new Error('Invalid dispatch quantity data');
+//         }
 
-        // Fetch the original order_bags and order_quantity for validation
-        const itemData = await client.query(
-          `SELECT oi.order_bags, oi.order_quantity, p.product_name
-           FROM odts.dealer_order_items oi
-           LEFT JOIN odts.product_master p ON p.product_id = oi.product_id
-           WHERE oi.item_id = $1`,
-          [parseInt(item_id)]
-        );
+//         // Fetch the original order_bags and order_quantity for validation
+//         const itemData = await client.query(
+//           `SELECT oi.order_bags, oi.order_quantity, p.product_name
+//            FROM odts.dealer_order_items oi
+//            LEFT JOIN odts.product_master p ON p.product_id = oi.product_id
+//            WHERE oi.item_id = $1`,
+//           [parseInt(item_id)]
+//         );
 
-        if (itemData.rows.length === 0) {
-          throw new Error(`Item ${item_id} not found`);
-        }
+//         if (itemData.rows.length === 0) {
+//           throw new Error(`Item ${item_id} not found`);
+//         }
 
-        const { order_bags, order_quantity, product_name } = itemData.rows[0];
-        const dispatchBags = parseInt(dispatch_bags) || 0;
-        const dispatchQty = parseFloat(dispatch_quantity) || 0;
-        const productDisplay = product_name || `Item #${item_id}`;
+//         const { order_bags, order_quantity, product_name } = itemData.rows[0];
+//         const dispatchBags = parseInt(dispatch_bags) || 0;
+//         const dispatchQty = parseFloat(dispatch_quantity) || 0;
+//         const productDisplay = product_name || `Item #${item_id}`;
 
-        // Validation: dispatch_bags should not exceed order_bags
-        if (dispatchBags > parseInt(order_bags)) {
-          throw new Error(`${productDisplay}: Dispatch bags (${dispatchBags}) cannot exceed order bags (${order_bags})`);
-        }
+//         // Validation: dispatch_bags should not exceed order_bags
+//         if (dispatchBags > parseInt(order_bags)) {
+//           throw new Error(`${productDisplay}: Dispatch bags (${dispatchBags}) cannot exceed order bags (${order_bags})`);
+//         }
 
-        // Validation: dispatch_quantity should not exceed order_quantity
-        if (dispatchQty > parseFloat(order_quantity)) {
-          throw new Error(`${productDisplay}: Dispatch quantity (${dispatchQty}) cannot exceed order quantity (${order_quantity})`);
-        }
+//         // Validation: dispatch_quantity should not exceed order_quantity
+//         if (dispatchQty > parseFloat(order_quantity)) {
+//           throw new Error(`${productDisplay}: Dispatch quantity (${dispatchQty}) cannot exceed order quantity (${order_quantity})`);
+//         }
 
-        console.log(`[Dispatcher] Updating item ${item_id}: bags=${dispatchBags}, qty=${dispatchQty}`);
+//         console.log(`[Dispatcher] Updating item ${item_id}: bags=${dispatchBags}, qty=${dispatchQty}`);
 
-        await client.query(
-          `UPDATE odts.dealer_order_items
-           SET order_dispatch_bags = $1, order_dispatch_quantity = $2, order_dispatch_comments = $4
-           WHERE item_id = $3`,
-          [dispatchBags, dispatchQty, parseInt(item_id), dispatch_comments || null]
-        );
-      }
+//         await client.query(
+//           `UPDATE odts.dealer_order_items
+//            SET order_dispatch_bags = $1, order_dispatch_quantity = $2, order_dispatch_comments = $4
+//            WHERE item_id = $3`,
+//           [dispatchBags, dispatchQty, parseInt(item_id), dispatch_comments || null]
+//         );
+//       }
 
-      // Calculate dispatch status based on totals
-      const totalsResult = await client.query(
-        `SELECT
-          COALESCE(SUM(order_bags), 0) as total_order_bags,
-          COALESCE(SUM(order_dispatch_bags), 0) as total_dispatch_bags
-         FROM odts.dealer_order_items
-         WHERE order_id = $1`,
-        [orderId]
-      );
+//       // Calculate dispatch status based on totals
+//       const totalsResult = await client.query(
+//         `SELECT
+//           COALESCE(SUM(order_bags), 0) as total_order_bags,
+//           COALESCE(SUM(order_dispatch_bags), 0) as total_dispatch_bags
+//          FROM odts.dealer_order_items
+//          WHERE order_id = $1`,
+//         [orderId]
+//       );
 
-      let { total_order_bags, total_dispatch_bags } = totalsResult.rows[0];
+//       let { total_order_bags, total_dispatch_bags } = totalsResult.rows[0];
 
-      // Ensure values are numbers, not strings
-      total_order_bags = parseInt(total_order_bags) || 0;
-      total_dispatch_bags = parseInt(total_dispatch_bags) || 0;
+//       // Ensure values are numbers, not strings
+//       total_order_bags = parseInt(total_order_bags) || 0;
+//       total_dispatch_bags = parseInt(total_dispatch_bags) || 0;
 
-      console.log(`[Dispatcher] Order ${orderId} totals: total_order_bags=${total_order_bags}, total_dispatch_bags=${total_dispatch_bags}`);
-      console.log(`[Dispatcher] Types: order_bags=${typeof total_order_bags}, dispatch_bags=${typeof total_dispatch_bags}`);
+//       console.log(`[Dispatcher] Order ${orderId} totals: total_order_bags=${total_order_bags}, total_dispatch_bags=${total_dispatch_bags}`);
+//       console.log(`[Dispatcher] Types: order_bags=${typeof total_order_bags}, dispatch_bags=${typeof total_dispatch_bags}`);
 
-      let newOrderStatus = 'DISPATCH_ON_HOLD';
+//       let newOrderStatus = 'DISPATCH_ON_HOLD';
 
-      console.log(`[Dispatcher] Condition check: ${total_dispatch_bags} === ${total_order_bags}? ${total_dispatch_bags === total_order_bags}`);
-      console.log(`[Dispatcher] Condition check: ${total_dispatch_bags} > 0? ${total_dispatch_bags > 0}`);
-      console.log(`[Dispatcher] Condition check: ${total_dispatch_bags} < ${total_order_bags}? ${total_dispatch_bags < total_order_bags}`);
-      console.log(`[Dispatcher] Condition check: ${total_dispatch_bags} > 0 && ${total_dispatch_bags} < ${total_order_bags}? ${total_dispatch_bags > 0 && total_dispatch_bags < total_order_bags}`);
+//       console.log(`[Dispatcher] Condition check: ${total_dispatch_bags} === ${total_order_bags}? ${total_dispatch_bags === total_order_bags}`);
+//       console.log(`[Dispatcher] Condition check: ${total_dispatch_bags} > 0? ${total_dispatch_bags > 0}`);
+//       console.log(`[Dispatcher] Condition check: ${total_dispatch_bags} < ${total_order_bags}? ${total_dispatch_bags < total_order_bags}`);
+//       console.log(`[Dispatcher] Condition check: ${total_dispatch_bags} > 0 && ${total_dispatch_bags} < ${total_order_bags}? ${total_dispatch_bags > 0 && total_dispatch_bags < total_order_bags}`);
 
-      if (total_dispatch_bags === total_order_bags) {
-        newOrderStatus = 'FULLY_DISPATCHED';
-      } else if (total_dispatch_bags > 0 && total_dispatch_bags < total_order_bags) {
-        newOrderStatus = 'PARTIALLY_DISPATCHED';
-      }
+//       if (total_dispatch_bags === total_order_bags) {
+//         newOrderStatus = 'FULLY_DISPATCHED';
+//       } else if (total_dispatch_bags > 0 && total_dispatch_bags < total_order_bags) {
+//         newOrderStatus = 'PARTIALLY_DISPATCHED';
+//       }
 
-      console.log(`[Dispatcher] Setting order_status to: ${newOrderStatus}`);
+//       console.log(`[Dispatcher] Setting order_status to: ${newOrderStatus}`);
 
-      // Update order_status in dealer_orders to reflect dispatch status
-      await client.query(
-        `UPDATE odts.dealer_orders
-         SET order_status = $1, updated_by = $3, updated_at = NOW()
-         WHERE order_id = $2`,
-        [newOrderStatus, orderId, req.session.user.id]
-      );
+//       // Update order_status in dealer_orders to reflect dispatch status
+//       await client.query(
+//         `UPDATE odts.dealer_orders
+//          SET order_status = $1, updated_by = $3, updated_at = NOW()
+//          WHERE order_id = $2`,
+//         [newOrderStatus, orderId, req.session.user.id]
+//       );
 
-      console.log(`[Dispatcher] Successfully updated order ${orderId} order_status to: ${newOrderStatus}`);
+//       console.log(`[Dispatcher] Successfully updated order ${orderId} order_status to: ${newOrderStatus}`);
 
-      await client.query('COMMIT');
+//       await client.query('COMMIT');
 
-      res.json({
-        success: true,
-        order_status: newOrderStatus,
-        message: `Dispatch updated to ${newOrderStatus} status`
-      });
-    } catch (e) {
-      await client.query('ROLLBACK');
-      throw e;
-    } finally {
-      client.release();
-    }
-  } catch (e) {
-    console.error('[Dispatcher] update dispatch quantities error:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
+//       res.json({
+//         success: true,
+//         order_status: newOrderStatus,
+//         message: `Dispatch updated to ${newOrderStatus} status`
+//       });
+//     } catch (e) {
+//       await client.query('ROLLBACK');
+//       throw e;
+//     } finally {
+//       client.release();
+//     }
+//   } catch (e) {
+//     console.error('[Dispatcher] update dispatch quantities error:', e.message);
+//     res.status(500).json({ error: e.message });
+//   }
+// });
 
 // PATCH /api/dispatcher/orders/:id/dispatch — update dispatch details (vehicle, driver, bilty, location, receipt)
 // Falls back to POST behavior (create if not exists) for admin convenience
@@ -646,6 +612,356 @@ router.delete('/api/dispatcher/orders/:id/dispatch/receipt', ensureDispatcher, a
     res.json({ success: true, message: 'Receipt deleted successfully' });
   } catch (e) {
     console.error('[Dispatcher] delete receipt error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Redirect old receipt URLs to new location
+router.get('/receipts/:year/:month/:day/:dealerId/:filename', (req, res) => {
+  const filePath = path.join(
+    process.cwd(),
+    'public/uploads/receipts',
+    req.params.year,
+    req.params.month,
+    req.params.day,
+    req.params.dealerId,
+    req.params.filename
+  );
+
+  // Security: ensure path is within uploads directory
+  const uploadDir = path.join(process.cwd(), 'public/uploads');
+  if (!filePath.startsWith(uploadDir)) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  // Check if file exists
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+
+  // Send the file
+  res.sendFile(filePath);
+});
+
+// ── Dispatch Items Management ──────────────────────────────────
+// Simple auth check for dispatch items - any logged-in user
+function ensureAuth(req, res, next) {
+  if (!req.session?.user) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  return next();
+}
+
+// Calculate order status based on dispatch progress
+async function calculateOrderStatus(orderId, pool) {
+  try {
+    // Get total order bags from dealer_order_items
+    const orderResult = await pool.query(
+      `SELECT COALESCE(SUM(order_bags), 0) as total_order_bags
+       FROM odts.dealer_order_items
+       WHERE order_id = $1`,
+      [orderId]
+    );
+    const totalOrderBags = parseInt(orderResult.rows[0]?.total_order_bags || 0);
+
+    // Get total dispatched bags from order_dispatch_items
+    const dispatchResult = await pool.query(
+      `SELECT COALESCE(SUM(dispatch_bags), 0) as total_dispatch_bags
+       FROM odts.order_dispatch_items odi
+       INNER JOIN odts.order_dispatch od ON od.dispatch_id = odi.dispatch_id
+       WHERE od.order_id = $1`,
+      [orderId]
+    );
+    const totalDispatchBags = parseInt(dispatchResult.rows[0]?.total_dispatch_bags || 0);
+
+    // Determine status based on dispatch progress
+    let newStatus;
+    if (totalDispatchBags === 0) {
+      newStatus = 'DISPATCH_ON_HOLD'; // No items dispatched yet
+    } else if (totalOrderBags === totalDispatchBags) {
+      newStatus = 'FULLY_DISPATCHED'; // All items dispatched
+    } else if (totalDispatchBags > 0 && totalDispatchBags < totalOrderBags) {
+      newStatus = 'PARTIALLY_DISPATCHED'; // Some items dispatched
+    }
+
+    return newStatus;
+  } catch (e) {
+    console.error('Error calculating order status:', e);
+    return null;
+  }
+}
+
+// GET dispatch items for an order
+router.get('/api/orders/:orderId/dispatch-items', ensureAuth, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    // Check if table exists first
+    const tableCheck = await pool.query(
+      `SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'odts' AND table_name = 'order_dispatch_items'
+      )`
+    );
+
+    if (!tableCheck.rows[0].exists) {
+      // Table doesn't exist yet, return empty array
+      return res.json([]);
+    }
+
+    const result = await pool.query(
+      `SELECT * FROM odts.order_dispatch_items
+       WHERE dispatch_id IN (SELECT dispatch_id FROM odts.order_dispatch WHERE order_id = $1)
+       ORDER BY created_at DESC`,
+      [orderId]
+    );
+    res.json(result.rows);
+  } catch (e) {
+    console.error('Error fetching dispatch items:', e);
+    // Return empty array instead of 500 error if table doesn't exist
+    if (e.message && e.message.includes('does not exist')) {
+      return res.json([]);
+    }
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST new dispatch item
+router.post('/api/orders/:orderId/dispatch-items', ensureAuth, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const {
+      dispatch_bags,
+      dispatch_quantity,
+      dispatch_vehicle_number,
+      dispatch_driver_name,
+      dispatch_driver_phone,
+      dispatch_bilty_number,
+      dispatch_receipt_image_url,
+      dispatch_receipt_image_type,
+      dispatch_receipt_image_orig_size,
+      dispatch_receipt_image_comp_size,
+      dispatch_notes,
+      product_id,
+      dispatch_warehouse_id
+    } = req.body;
+
+    // Validate required fields
+    if (!dispatch_bags || !dispatch_vehicle_number || !dispatch_driver_phone || !dispatch_bilty_number) {
+      return res.status(400).json({ error: 'Missing required fields: dispatch_bags, dispatch_vehicle_number, dispatch_driver_phone, dispatch_bilty_number' });
+    }
+
+    // Get or create dispatch record for this order
+    const dispatchResult = await pool.query(
+      'SELECT dispatch_id FROM odts.order_dispatch WHERE order_id = $1',
+      [orderId]
+    );
+
+    let dispatch_id;
+    if (dispatchResult.rows.length === 0) {
+      // Create new dispatch record
+      const newDispatch = await pool.query(
+        `INSERT INTO odts.order_dispatch (order_id, created_by, updated_by)
+         VALUES ($1, $2, $2) RETURNING dispatch_id`,
+        [orderId, req.session.user.id]
+      );
+      dispatch_id = newDispatch.rows[0].dispatch_id;
+    } else {
+      dispatch_id = dispatchResult.rows[0].dispatch_id;
+    }
+
+    // Validate dispatch quantity against order quantity for the product
+    if (product_id) {
+      // Get total order bags for this product
+      const orderQtyResult = await pool.query(
+        `SELECT COALESCE(SUM(order_bags), 0) as total_order_bags
+         FROM odts.dealer_order_items
+         WHERE order_id = $1 AND product_id = $2`,
+        [orderId, product_id]
+      );
+      const totalOrderBags = parseInt(orderQtyResult.rows[0]?.total_order_bags || 0);
+
+      // Get already dispatched bags for this product
+      const dispatchedQtyResult = await pool.query(
+        `SELECT COALESCE(SUM(dispatch_bags), 0) as total_dispatch_bags
+         FROM odts.order_dispatch_items odi
+         INNER JOIN odts.order_dispatch od ON od.dispatch_id = odi.dispatch_id
+         WHERE od.order_id = $1 AND odi.product_id = $2`,
+        [orderId, product_id]
+      );
+      const alreadyDispatchedBags = parseInt(dispatchedQtyResult.rows[0]?.total_dispatch_bags || 0);
+
+      const remainingBags = totalOrderBags - alreadyDispatchedBags;
+      const dispatchQty = parseInt(dispatch_bags);
+
+      if (dispatchQty > remainingBags) {
+        return res.status(400).json({
+          error: `Cannot dispatch ${dispatchQty} bags. Only ${remainingBags} bags remaining for this product (${totalOrderBags} ordered, ${alreadyDispatchedBags} already dispatched).`
+        });
+      }
+
+      if (remainingBags === 0) {
+        return res.status(400).json({
+          error: 'All bags for this product have already been dispatched.'
+        });
+      }
+    }
+
+    // Insert dispatch item with warehouse_id
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Insert dispatch item (triggers will fire automatically)
+      const insertQuery = `INSERT INTO odts.order_dispatch_items (
+        dispatch_id, dispatch_bags, dispatch_quantity, dispatch_vehicle_number,
+        dispatch_driver_name, dispatch_driver_phone, dispatch_bilty_number,
+        dispatch_receipt_image_url, dispatch_receipt_image_type,
+        dispatch_receipt_image_orig_size, dispatch_receipt_image_comp_size,
+        dispatch_notes, dispatch_warehouse_id, product_id, created_by, updated_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      RETURNING *`;
+
+      const insertParams = [
+        dispatch_id, parseInt(dispatch_bags), parseFloat(dispatch_quantity),
+        dispatch_vehicle_number, dispatch_driver_name, dispatch_driver_phone,
+        dispatch_bilty_number, dispatch_receipt_image_url, dispatch_receipt_image_type,
+        dispatch_receipt_image_orig_size, dispatch_receipt_image_comp_size,
+        dispatch_notes,
+        dispatch_warehouse_id ? parseInt(dispatch_warehouse_id) : null,
+        product_id ? parseInt(product_id) : null,
+        req.session.user.id
+      ];
+
+      const result = await client.query(insertQuery, insertParams);
+
+      await client.query('COMMIT');
+
+      // Calculate and update order status based on dispatch progress
+      const newStatus = await calculateOrderStatus(orderId, pool);
+      if (newStatus) {
+        await pool.query(
+          `UPDATE odts.dealer_orders SET order_status = $1, updated_by = $2, updated_at = NOW()
+           WHERE order_id = $3`,
+          [newStatus, req.session.user.id, orderId]
+        );
+      }
+
+      res.json(result.rows[0]);
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      console.error('Error creating dispatch item:', e);
+      res.status(500).json({ error: e.message });
+    } finally {
+      client.release();
+    }
+  } catch (e) {
+    // This catches errors before the client is initialized
+    console.error('Error creating dispatch item:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PUT update dispatch item
+router.put('/api/dispatch-items/:itemId', ensureAuth, async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    const {
+      dispatch_bags,
+      dispatch_quantity,
+      dispatch_vehicle_number,
+      dispatch_driver_name,
+      dispatch_driver_phone,
+      dispatch_bilty_number,
+      dispatch_receipt_image_url,
+      dispatch_receipt_image_type,
+      dispatch_receipt_image_orig_size,
+      dispatch_receipt_image_comp_size,
+      dispatch_notes
+    } = req.body;
+
+    const result = await pool.query(
+      `UPDATE odts.order_dispatch_items SET
+        dispatch_bags = $1, dispatch_quantity = $2, dispatch_vehicle_number = $3,
+        dispatch_driver_name = $4, dispatch_driver_phone = $5, dispatch_bilty_number = $6,
+        dispatch_receipt_image_url = $7, dispatch_receipt_image_type = $8,
+        dispatch_receipt_image_orig_size = $9, dispatch_receipt_image_comp_size = $10,
+        dispatch_notes = $11, updated_by = $12, updated_at = NOW()
+      WHERE dispatch_items_id = $13
+      RETURNING *`,
+      [
+        dispatch_bags, dispatch_quantity, dispatch_vehicle_number,
+        dispatch_driver_name, dispatch_driver_phone, dispatch_bilty_number,
+        dispatch_receipt_image_url, dispatch_receipt_image_type,
+        dispatch_receipt_image_orig_size, dispatch_receipt_image_comp_size,
+        dispatch_notes, req.session.user.id, itemId
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Dispatch item not found' });
+    }
+
+    // Get order_id and recalculate status
+    const dispatchItem = result.rows[0];
+    const dispatchData = await pool.query(
+      'SELECT order_id FROM odts.order_dispatch WHERE dispatch_id = (SELECT dispatch_id FROM odts.order_dispatch_items WHERE dispatch_items_id = $1)',
+      [itemId]
+    );
+
+    if (dispatchData.rows.length > 0) {
+      const orderId = dispatchData.rows[0].order_id;
+      const newStatus = await calculateOrderStatus(orderId, pool);
+      if (newStatus) {
+        await pool.query(
+          `UPDATE odts.dealer_orders SET order_status = $1, updated_by = $2, updated_at = NOW()
+           WHERE order_id = $3`,
+          [newStatus, req.session.user.id, orderId]
+        );
+      }
+    }
+
+    res.json(result.rows[0]);
+  } catch (e) {
+    console.error('Error updating dispatch item:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE dispatch item
+router.delete('/api/dispatch-items/:itemId', ensureAuth, async (req, res) => {
+  try {
+    const { itemId } = req.params;
+
+    // Get order_id before deletion
+    const itemData = await pool.query(
+      `SELECT od.order_id FROM odts.order_dispatch_items odi
+       INNER JOIN odts.order_dispatch od ON od.dispatch_id = odi.dispatch_id
+       WHERE odi.dispatch_items_id = $1`,
+      [itemId]
+    );
+
+    await pool.query(
+      'DELETE FROM odts.order_dispatch_items WHERE dispatch_items_id = $1',
+      [itemId]
+    );
+
+    // Recalculate order status after deletion
+    if (itemData.rows.length > 0) {
+      const orderId = itemData.rows[0].order_id;
+      const newStatus = await calculateOrderStatus(orderId, pool);
+      if (newStatus) {
+        await pool.query(
+          `UPDATE odts.dealer_orders SET order_status = $1, updated_by = $2, updated_at = NOW()
+           WHERE order_id = $3`,
+          [newStatus, req.session.user.id, orderId]
+        );
+      }
+    }
+
+    res.json({ success: true, message: 'Dispatch item deleted' });
+  } catch (e) {
+    console.error('Error deleting dispatch item:', e);
     res.status(500).json({ error: e.message });
   }
 });

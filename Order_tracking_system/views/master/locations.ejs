@@ -82,16 +82,16 @@ function App(){
         <div className="table-responsive">
           <table className="table table-hover table-bordered align-middle mb-0">
             <thead className="table-light"><tr>
-              <th style={{cursor:'pointer'}} onClick={()=>sort('warehouse_code')}>Code<SI col="warehouse_code"/></th>
-              <th style={{cursor:'pointer'}} onClick={()=>sort('warehouse_name')}>Name<SI col="warehouse_name"/></th>
-              <th style={{cursor:'pointer'}} onClick={()=>sort('warehouse_type')}>Type<SI col="warehouse_type"/></th>
+              <th style={{cursor:'pointer'}} onClick={()=>sort('warehouse_name')}>Warehouse Name<SI col="warehouse_name"/></th>
+              <th style={{cursor:'pointer'}} onClick={()=>sort('warehouse_type')}>Warehouse Type<SI col="warehouse_type"/></th>
+              <th style={{cursor:'pointer'}} onClick={()=>sort('warehouse_code')}>Warehouse Code<SI col="warehouse_code"/></th>
               <th style={{width:'90px',textAlign:'center'}}>Action</th>
             </tr></thead>
             <tbody>{filtered.length===0?<tr><td colSpan="4" className="text-center text-muted py-4">No warehouse found</td></tr>:
               filtered.map((r,idx)=><tr key={`wh-${r.warehouse_id||idx}`}>
-                <td className="fw-semibold small text-monospace">{r.warehouse_code||'—'}</td>
                 <td>{r.warehouse_name||'—'}</td>
                 <td><TypeBadge type={r.warehouse_type}/></td>
+                <td className="fw-semibold small text-monospace">{r.warehouse_code||'—'}</td>
                 <td className="text-center"><button className="btn btn-outline-primary btn-sm" onClick={()=>openEdit(r)}>Edit</button></td>
               </tr>)
             }</tbody>
@@ -105,12 +105,12 @@ function App(){
           <div className="modal-header"><h5 className="modal-title">{editId?'Edit':'Add'} Warehouse</h5><button type="button" className="btn-close" onClick={()=>setShowModal(false)}></button></div>
           <div className="modal-body">
             <div className="row g-3">
-              <div className="col-md-6"><label className="form-label fw-semibold">Code <span className="text-danger">*</span></label>
-                <input className="form-control" value={form.warehouse_code} onChange={e=>setForm({...form,warehouse_code:e.target.value})} required/></div>
-              <div className="col-md-6"><label className="form-label fw-semibold">Type <span className="text-danger">*</span></label>
-                <input className="form-control" value={form.warehouse_type} onChange={e=>setForm({...form,warehouse_type:e.target.value})} required/></div>
-              <div className="col-12"><label className="form-label fw-semibold">Name <span className="text-danger">*</span></label>
+              <div className="col-12"><label className="form-label fw-semibold">Warehouse Name <span className="text-danger">*</span></label>
                 <input className="form-control" value={form.warehouse_name} onChange={e=>setForm({...form,warehouse_name:e.target.value})} required/></div>
+              <div className="col-md-6"><label className="form-label fw-semibold">Warehouse Type <span className="text-danger">*</span></label>
+                <input className="form-control" value={form.warehouse_type} onChange={e=>setForm({...form,warehouse_type:e.target.value})} required/></div>
+              <div className="col-md-6"><label className="form-label fw-semibold">Warehouse Code <span className="text-danger">*</span></label>
+                <input className="form-control" value={form.warehouse_code} onChange={e=>setForm({...form,warehouse_code:e.target.value})} disabled={editId!==null} required/></div>
               <div className="col-md-6"><label className="form-label fw-semibold">UI Label</label>
                 <input className="form-control" value={form.warehouse_ui_label} onChange={e=>setForm({...form,warehouse_ui_label:e.target.value})}/></div>
               <div className="col-md-6"><label className="form-label fw-semibold">Display Order</label>
