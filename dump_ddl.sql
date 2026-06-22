@@ -467,22 +467,40 @@ current_qty INTEGER NOT NULL,
 last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 PRIMARY KEY (warehouse_inventory_id)
 );
---CREATE TABLE odts.whatsapp_message_templates (
-  template_id SERIAL PRIMARY KEY,
-  template_name VARCHAR(255) NOT NULL,
-  message_body TEXT NOT NULL,  -- with {{variables}}
-  created_by INT,
-  created_at TIMESTAMP DEFAULT NOW()
-);
 --
-CREATE TABLE odts.whatsapp_message_templates (
-  template_id SERIAL PRIMARY KEY,
-  template_name VARCHAR(255) NOT NULL,
-  message_body TEXT NOT NULL,  -- with {{variables}}
-  created_by INT,
-  created_at TIMESTAMP DEFAULT NOW()
-);
 --
+-- Create WhatsApp message templates table
+CREATE TABLE IF NOT EXISTS odts.whatsapp_message_templates (
+  template_id SERIAL PRIMARY KEY,
+  template_name VARCHAR(255) NOT NULL UNIQUE,
+  message_body TEXT NOT NULL,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_by INT NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+  --to check below
+ -- FOREIGN KEY (created_by) REFERENCES odts.user_master(user_id)
+);
+
+-- Create WhatsApp message logs table
+CREATE TABLE IF NOT EXISTS odts.whatsapp_message_logs (
+  message_id SERIAL PRIMARY KEY,
+  dealer_id INT NOT NULL,
+  phone_number VARCHAR(50) NOT NULL,
+  template_id INT,
+  message_sent TEXT,
+  status VARCHAR(50) NOT NULL,
+  message_sid VARCHAR(255),
+  error_message TEXT,
+  sent_at TIMESTAMP DEFAULT NOW(),
+  sent_by INT NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+   --to check below
+  --FOREIGN KEY (dealer_id) REFERENCES odts.dealer_master(dealer_id),
+  --FOREIGN KEY (template_id) REFERENCES odts.whatsapp_message_templates(template_id) ON DELETE SET NULL,
+  --FOREIGN KEY (sent_by) REFERENCES odts.user_master(user_id)
+);
+
 --TO DO
 select * from odts.dealer_orders;
 -- remove product_id and order_quantity

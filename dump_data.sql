@@ -548,7 +548,7 @@ user_email
 values (0, null, 'system', 'system', public.crypt('system123', public.gen_salt('bf')), NULL, NULL);
 --
 INSERT INTO odts.whatsapp_message_templates (template_name, message_body, created_by) VALUES
-('Order Confirmation', 'Hi {{dealer_name}}, your order has been confirmed. Your Dealer Code: {{dealer_code}}. We will contact you shortly with dispatch details.', 1),
-('Dispatch Alert', 'Hi {{dealer_name}}, your order is on its way! Driver will reach soon. Contact: {{dealer_phone}}', 1),
-('Delivery Complete', 'Hi {{dealer_name}}, your order has been successfully delivered. Thank you for your business!', 1),
-('Follow-up', 'Hi {{dealer_name}}, we hope you received your order. Please let us know if you have any questions.', 1);
+('Order Confirmation', 'Hi {{dealer_name}}, your order has been confirmed. Your Dealer Code: {{dealer_code}}. We will contact you shortly with dispatch details.', 0),
+('Dispatch Alert', 'Hi {{dealer_name}}, your order is on its way! Driver will reach soon. Contact: {{dealer_phone}}', 0),
+('Delivery Complete', 'Hi {{dealer_name}}, your order has been successfully delivered. Thank you for your business!', 0),
+('Follow-up', 'Hi {{dealer_name}}, we hope you received your order. Please let us know if you have any questions.', 0);
