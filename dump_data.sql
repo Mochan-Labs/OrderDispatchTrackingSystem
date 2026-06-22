@@ -561,14 +561,6 @@ user_phone,
 user_email
 )
 values (0, null, 'system', 'system', public.crypt('system123', public.gen_salt('bf')), NULL, NULL);
-—
-CREATE TABLE odts.whatsapp_message_templates (
-  template_id SERIAL PRIMARY KEY,
-  template_name VARCHAR(255) NOT NULL,
-  message_body TEXT NOT NULL,  -- with {{variables}}
-  created_by INT,
-  created_at TIMESTAMP DEFAULT NOW()
-);
 --
 INSERT INTO odts.whatsapp_message_templates (template_name, message_body, created_by) VALUES
 ('Order Confirmation', 'Hi {{dealer_name}}, your order has been confirmed. Your Dealer Code: {{dealer_code}}. We will contact you shortly with dispatch details.', 1),
