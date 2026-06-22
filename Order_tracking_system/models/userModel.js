@@ -177,7 +177,7 @@ async function setUserLockedFlag(userId, isLocked) {
   }
 
   await db.query(
-    `UPDATE odts.users
+    `UPDATE odts.user_master
         SET ${lockColumn} = $1
       WHERE user_id = $2`,
     [Boolean(isLocked), userId]
@@ -189,14 +189,14 @@ async function countConsecutiveFailedPasswordAttempts(userId) {
     const res = await db.query(
       `SELECT COUNT(*)::int AS failed_count
          FROM odts.user_login_audit a
-        WHERE a.user_id = $1
+        WHERE a.login_user_id = $1
           AND a.login_method = 'PASSWORD'
           AND a.login_status = 'FAILED'
           AND a.login_at > COALESCE(
                 (
                   SELECT MAX(s.login_at)
                     FROM odts.user_login_audit s
-                   WHERE s.user_id = $1
+                   WHERE s.login_user_id = $1
                      AND s.login_method = 'PASSWORD'
                      AND s.login_status = 'SUCCESS'
                 ),
@@ -226,7 +226,7 @@ async function updateUserLastLoginAt(userId) {
   }
 
   await db.query(
-    `UPDATE odts.users
+    `UPDATE odts.user_master
         SET user_last_login_at = NOW()
       WHERE user_id = $1`,
     [userId]
