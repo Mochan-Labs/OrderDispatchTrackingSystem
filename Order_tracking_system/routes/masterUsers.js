@@ -34,6 +34,7 @@ async function fetchLoginUsersRows() {
       u.user_phone,
       u.user_role_id,
       u.dealer_id,
+      u.user_warehouse_id,
       COALESCE(u.user_is_active_flag, TRUE)  AS user_is_active_flag,
       COALESCE(u.user_is_locked_flag, FALSE) AS user_is_locked_flag,
       u.created_at,
@@ -43,7 +44,9 @@ async function fetchLoginUsersRows() {
       ub.user_login_name AS updated_by_user_login_name,
       r.role_name,
       r.role_id,
+      w.warehouse_name,
       CASE WHEN UPPER(COALESCE(r.role_name, '')) = 'DEALER' THEN TRUE ELSE FALSE END AS is_dealer_role,
+      CASE WHEN UPPER(COALESCE(r.role_name, '')) = 'STOCK_MANAGER' THEN TRUE ELSE FALSE END AS is_stock_manager_role,
       ${hasDealerCompanyName ? 'd.dealer_company_name' : 'd.dealer_name AS dealer_company_name'},
       d.dealer_name,
       d.dealer_phone,
@@ -67,6 +70,7 @@ async function fetchLoginUsersRows() {
     FROM odts.user_master u
     LEFT JOIN odts.user_roles_master r ON u.user_role_id = r.role_id
     LEFT JOIN odts.dealer_master d ON u.dealer_id = d.dealer_id
+    LEFT JOIN odts.warehouse_master w ON u.user_warehouse_id = w.warehouse_id
     LEFT JOIN odts.user_master ub ON u.updated_by = ub.user_id
     ORDER BY u.user_id
   `);
@@ -103,8 +107,16 @@ router.get('/api/master/users/roles', ensureAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+router.get('/api/master/users/warehouses', ensureAdmin, async (req, res) => {
+  try {
+    noStore(res);
+    const r = await pool.query('SELECT warehouse_id, warehouse_name FROM odts.warehouse_master ORDER BY warehouse_name');
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.post('/api/master/users', ensureAdmin, async (req, res) => {
-  const { user_name, user_login_name, user_email, user_phone, role_id, user_is_active_flag, user_is_locked_flag, password } = req.body;
+  const { user_name, user_login_name, user_email, user_phone, role_id, user_warehouse_id, user_is_active_flag, user_is_locked_flag, password } = req.body;
   if (!user_name || !user_login_name || !user_email) return res.status(400).json({ error: 'Name, user name and email are required' });
   try {
     const actorId = req.session?.user?.id || 0;
@@ -114,9 +126,9 @@ router.post('/api/master/users', ensureAdmin, async (req, res) => {
     if (existingLogin.rows.length) return res.status(400).json({ error: 'User name already exists' });
     const hash = await bcrypt.hash(password || 'Change@123', 10);
     const r = await pool.query(
-      `INSERT INTO odts.user_master(user_name, user_login_name, user_email, user_phone, password_hash, user_role_id, user_is_active_flag, user_is_locked_flag, created_by, updated_by, created_at, updated_at)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),now())
-       RETURNING user_id, user_name, user_login_name, user_email, user_phone, user_is_active_flag, user_is_locked_flag, created_at`,
+      `INSERT INTO odts.user_master(user_name, user_login_name, user_email, user_phone, password_hash, user_role_id, user_warehouse_id, user_is_active_flag, user_is_locked_flag, created_by, updated_by, created_at, updated_at)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now(),now())
+       RETURNING user_id, user_name, user_login_name, user_email, user_phone, user_is_active_flag, user_is_locked_flag, user_warehouse_id, created_at`,
       [
         user_name.trim(),
         user_login_name.trim(),
@@ -124,6 +136,7 @@ router.post('/api/master/users', ensureAdmin, async (req, res) => {
         user_phone || '',
         hash,
         role_id || null,
+        user_warehouse_id || null,
         user_is_active_flag !== false,
         user_is_locked_flag === true,
         actorId,
@@ -135,7 +148,7 @@ router.post('/api/master/users', ensureAdmin, async (req, res) => {
 });
 
 router.put('/api/master/users/:id', ensureAdmin, async (req, res) => {
-  const { user_name, user_login_name, user_email, user_phone, role_id, user_is_active_flag, user_is_locked_flag, password } = req.body;
+  const { user_name, user_login_name, user_email, user_phone, role_id, user_warehouse_id, user_is_active_flag, user_is_locked_flag, password } = req.body;
   if (!user_name || !user_login_name) return res.status(400).json({ error: 'Name and user name are required' });
   try {
     const actorId = req.session?.user?.id || 0;
@@ -152,7 +165,7 @@ router.put('/api/master/users/:id', ensureAdmin, async (req, res) => {
     }
 
     const userRes = await pool.query(
-      'SELECT user_id, dealer_id, user_role_id, user_email, user_phone FROM odts.user_master WHERE user_id=$1',
+      'SELECT user_id, dealer_id, user_warehouse_id, user_role_id, user_email, user_phone FROM odts.user_master WHERE user_id=$1',
       [req.params.id]
     );
     if (!userRes.rows.length) return res.status(404).json({ error: 'User not found' });
@@ -161,6 +174,7 @@ router.put('/api/master/users/:id', ensureAdmin, async (req, res) => {
     const effectiveRoleId = role_id || existingUser.user_role_id || null;
     const effectiveEmail = cleanEmail !== '' ? cleanEmail : (existingUser.user_email || '');
     const effectivePhone = cleanPhone !== '' ? cleanPhone : (existingUser.user_phone || '');
+    const effectiveWarehouseId = user_warehouse_id !== undefined ? user_warehouse_id : (existingUser.user_warehouse_id || null);
 
     const roleRes = await pool.query('SELECT role_name FROM odts.user_roles_master WHERE role_id=$1', [effectiveRoleId]);
     const roleName = roleRes.rows[0]?.role_name || '';
@@ -200,18 +214,18 @@ router.put('/api/master/users/:id', ensureAdmin, async (req, res) => {
     if (password && password.trim()) {
       const hash = await bcrypt.hash(password, 10);
       query = `UPDATE odts.user_master
-               SET user_name=$1, user_login_name=$2, user_email=$3, user_phone=$4, user_role_id=$5,
-                   user_is_active_flag=$6, user_is_locked_flag=$7, password_hash=$8, updated_by=$9, updated_at=now()
-               WHERE user_id=$10
-               RETURNING user_id, user_name, user_login_name, user_email, user_phone, user_is_active_flag, user_is_locked_flag, updated_at`;
-      params = [cleanName, cleanLoginName, effectiveEmail, effectivePhone, effectiveRoleId, user_is_active_flag !== false, user_is_locked_flag === true, hash, actorId, req.params.id];
+               SET user_name=$1, user_login_name=$2, user_email=$3, user_phone=$4, user_role_id=$5, user_warehouse_id=$6,
+                   user_is_active_flag=$7, user_is_locked_flag=$8, password_hash=$9, updated_by=$10, updated_at=now()
+               WHERE user_id=$11
+               RETURNING user_id, user_name, user_login_name, user_email, user_phone, user_is_active_flag, user_is_locked_flag, user_warehouse_id, updated_at`;
+      params = [cleanName, cleanLoginName, effectiveEmail, effectivePhone, effectiveRoleId, effectiveWarehouseId, user_is_active_flag !== false, user_is_locked_flag === true, hash, actorId, req.params.id];
     } else {
       query = `UPDATE odts.user_master
-               SET user_name=$1, user_login_name=$2, user_email=$3, user_phone=$4, user_role_id=$5,
-                   user_is_active_flag=$6, user_is_locked_flag=$7, updated_by=$8, updated_at=now()
-               WHERE user_id=$9
-               RETURNING user_id, user_name, user_login_name, user_email, user_phone, user_is_active_flag, user_is_locked_flag, updated_at`;
-      params = [cleanName, cleanLoginName, effectiveEmail, effectivePhone, effectiveRoleId, user_is_active_flag !== false, user_is_locked_flag === true, actorId, req.params.id];
+               SET user_name=$1, user_login_name=$2, user_email=$3, user_phone=$4, user_role_id=$5, user_warehouse_id=$6,
+                   user_is_active_flag=$7, user_is_locked_flag=$8, updated_by=$9, updated_at=now()
+               WHERE user_id=$10
+               RETURNING user_id, user_name, user_login_name, user_email, user_phone, user_is_active_flag, user_is_locked_flag, user_warehouse_id, updated_at`;
+      params = [cleanName, cleanLoginName, effectiveEmail, effectivePhone, effectiveRoleId, effectiveWarehouseId, user_is_active_flag !== false, user_is_locked_flag === true, actorId, req.params.id];
     }
     const r = await pool.query(query, params);
     if (!r.rows.length) return res.status(404).json({ error: 'User not found' });

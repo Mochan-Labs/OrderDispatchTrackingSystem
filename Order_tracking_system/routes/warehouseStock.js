@@ -24,6 +24,16 @@ router.get('/admin/warehouse-stock', ensureAdminOrStockManagerOrDispatcher, (req
 // GET API: all warehouse stock with items and product details
 router.get('/api/warehouse-stock', ensureAdminOrStockManagerOrDispatcher, async (req, res) => {
   try {
+    const isDispatcher = req.session.user.role === 'DISPATCHER';
+    const userWarehouseId = req.session.user.user_warehouse_id;
+
+    let whereClause = '';
+    const params = [];
+    if (isDispatcher && userWarehouseId) {
+      whereClause = ' WHERE ws.warehouse_id = $1';
+      params.push(userWarehouseId);
+    }
+
     const result = await pool.query(`
       SELECT
         ws.warehouse_stock_id,
@@ -51,8 +61,9 @@ router.get('/api/warehouse-stock', ensureAdminOrStockManagerOrDispatcher, async 
         ) AS items
       FROM odts.warehouse_stock ws
       LEFT JOIN odts.warehouse_master wm ON wm.warehouse_id = ws.warehouse_id
+      ${whereClause}
       ORDER BY ws.warehouse_stock_date DESC, ws.warehouse_stock_id DESC
-    `);
+    `, params);
     res.json(result.rows);
   } catch (e) {
     console.error('Error fetching warehouse stock:', e);
@@ -80,6 +91,14 @@ router.post('/api/warehouse-stock', ensureAdminOrStockManagerOrDispatcher, async
 
     if (!warehouse_id || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Warehouse and at least one item are required' });
+    }
+
+    const isDispatcher = req.session.user.role === 'DISPATCHER';
+    const userWarehouseId = req.session.user.user_warehouse_id;
+    const parsedWarehouseId = parseInt(warehouse_id, 10);
+
+    if (isDispatcher && userWarehouseId && parsedWarehouseId !== userWarehouseId) {
+      return res.status(403).json({ error: 'Access denied. You can only manage stock for your assigned warehouse.' });
     }
 
     await client.query('BEGIN');
@@ -290,9 +309,20 @@ router.delete('/api/warehouse-stock-item/:itemId', ensureAdminOrStockManagerOrDi
 // GET API: warehouses dropdown
 router.get('/api/warehouses-dropdown', ensureAdminOrStockManagerOrDispatcher, async (req, res) => {
   try {
-    const result = await pool.query(
-      'SELECT warehouse_id, warehouse_name FROM odts.warehouse_master ORDER BY warehouse_name'
-    );
+    const isDispatcher = req.session.user.role === 'DISPATCHER';
+    const userWarehouseId = req.session.user.user_warehouse_id;
+
+    let query = 'SELECT warehouse_id, warehouse_name FROM odts.warehouse_master';
+    const params = [];
+
+    if (isDispatcher && userWarehouseId) {
+      query += ' WHERE warehouse_id = $1';
+      params.push(userWarehouseId);
+    }
+
+    query += ' ORDER BY warehouse_name';
+
+    const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -303,6 +333,8 @@ router.get('/api/warehouses-dropdown', ensureAdminOrStockManagerOrDispatcher, as
 router.get('/api/warehouse-inventory', ensureAdminOrStockManagerOrDispatcher, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
+    const isDispatcher = req.session.user.role === 'DISPATCHER';
+    const userWarehouseId = req.session.user.user_warehouse_id;
 
     let query = `
       SELECT
@@ -321,6 +353,11 @@ router.get('/api/warehouse-inventory', ensureAdminOrStockManagerOrDispatcher, as
     `;
 
     let params = [];
+    if (isDispatcher && userWarehouseId) {
+      query += ` AND wi.warehouse_id = $${params.length + 1}`;
+      params.push(userWarehouseId);
+    }
+
     if (startDate || endDate) {
       const start = startDate ? new Date(startDate) : new Date('2020-01-01');
       const end = endDate ? new Date(endDate) : new Date();
@@ -342,6 +379,8 @@ router.get('/api/warehouse-inventory', ensureAdminOrStockManagerOrDispatcher, as
 router.get('/api/warehouse-inventory/summary/by-warehouse', ensureAdminOrStockManagerOrDispatcher, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
+    const isDispatcher = req.session.user.role === 'DISPATCHER';
+    const userWarehouseId = req.session.user.user_warehouse_id;
 
     let query = `
       SELECT
@@ -357,6 +396,11 @@ router.get('/api/warehouse-inventory/summary/by-warehouse', ensureAdminOrStockMa
     `;
 
     let params = [];
+    if (isDispatcher && userWarehouseId) {
+      query += ` AND wi.warehouse_id = $${params.length + 1}`;
+      params.push(userWarehouseId);
+    }
+
     if (startDate || endDate) {
       const start = startDate ? new Date(startDate) : new Date('2020-01-01');
       const end = endDate ? new Date(endDate) : new Date();

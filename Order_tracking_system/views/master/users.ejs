@@ -15,7 +15,7 @@
 
 <script type="text/babel">
 const { useState, useEffect } = React;
-const EMPTY = { user_name:'', dealer_company_name:'', user_login_name:'', user_email:'', user_phone:'', role_id:'', password:'', user_is_active_flag:true, user_is_locked_flag:false };
+const EMPTY = { user_name:'', dealer_company_name:'', user_login_name:'', user_email:'', user_phone:'', role_id:'', user_warehouse_id:'', password:'', user_is_active_flag:true, user_is_locked_flag:false };
 
 const validatePhone=(val)=>val.replace(/[^0-9]/g,'').slice(0,10);
 const isValidPhone=(val)=>/^\d{10}$/.test(val.replace(/[^0-9]/g,''));
@@ -26,34 +26,37 @@ function Toast({msg,type,onClose}){
 }
 
 function App(){
-  const [rows,setRows]=useState([]); const [roles,setRoles]=useState([]);
+  const [rows,setRows]=useState([]); const [roles,setRoles]=useState([]); const [warehouses,setWarehouses]=useState([]);
   const [loading,setLoading]=useState(true); const [search,setSearch]=useState('');
   const [showModal,setShowModal]=useState(false); const [form,setForm]=useState(EMPTY);
   const [editId,setEditId]=useState(null); const [saving,setSaving]=useState(false);
-  const [isDealerEdit,setIsDealerEdit]=useState(false);
+  const [isDealerEdit,setIsDealerEdit]=useState(false); const [isStockManagerEdit,setIsStockManagerEdit]=useState(false);
   const [toast,setToast]=useState({msg:'',type:'success'});
   const [sortCol,setSortCol]=useState('user_id'); const [sortAsc,setSortAsc]=useState(true);
 
   const notify=(msg,type='success')=>{setToast({msg,type});setTimeout(()=>setToast({msg:''}),4000);};
   const load=async()=>{setLoading(true);try{
-    const [ur,rr]=await Promise.all([
+    const [ur,rr,wr]=await Promise.all([
       fetch('/api/master/users', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } }),
-      fetch('/api/master/users/roles', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } })
+      fetch('/api/master/users/roles', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } }),
+      fetch('/api/master/users/warehouses', { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } })
     ]);
     if(!ur.ok)throw new Error(await ur.text());
-    setRows(await ur.json()); setRoles(await rr.json());
+    setRows(await ur.json()); setRoles(await rr.json()); setWarehouses(await wr.json());
   }catch(e){notify(e.message,'danger');}finally{setLoading(false);}};
   useEffect(()=>{load();},[]);
 
   const openAdd=()=>{window.location.href='/signup';};
   const exportExcel=()=>{
-    const data=filtered.map(r=>({'Login Name':r.user_login_name||'','User Name':r.display_name||'','Dealer Company Name':r.display_dealer_company_name||'','Phone':r.display_phone||'','Role':r.role_name||'','Status':r.user_is_active_flag?'Active':'Inactive','Locked':r.user_is_locked_flag?'Yes':'No','Updated At':r.updated_at?new Date(r.updated_at).toLocaleDateString():'','Updated By':r.updated_by_user_login_name||''}) );
+    const data=filtered.map(r=>({'Login Name':r.user_login_name||'','User Name':r.display_name||'','Dealer Company Name':r.display_dealer_company_name||'','Warehouse':r.warehouse_name||'','Phone':r.display_phone||'','Role':r.role_name||'','Status':r.user_is_active_flag?'Active':'Inactive','Locked':r.user_is_locked_flag?'Yes':'No','Updated At':r.updated_at?new Date(r.updated_at).toLocaleDateString():'','Updated By':r.updated_by_user_login_name||''}) );
     const ws=XLSX.utils.json_to_sheet(data); const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,'LoginUsers'); XLSX.writeFile(wb,'LoginUsers.xlsx');
   };
   const openEdit=(r)=>{
     const dealerRole = !!r.is_dealer_role || String(r.role_name||'').toUpperCase()==='DEALER';
+    const stockManagerRole = !!r.is_stock_manager_role || String(r.role_name||'').toUpperCase()==='STOCK_MANAGER';
     setIsDealerEdit(dealerRole);
+    setIsStockManagerEdit(stockManagerRole);
     setForm({
       user_name:r.display_name||r.user_name||'',
       dealer_company_name:r.display_dealer_company_name||r.dealer_company_name||'',
@@ -61,6 +64,7 @@ function App(){
       user_email:r.display_email||r.user_email||'',
       user_phone:r.display_phone||r.user_phone||'',
       role_id:r.role_id||'',
+      user_warehouse_id:r.user_warehouse_id||'',
       password:'',
       user_is_active_flag:r.user_is_active_flag,
       user_is_locked_flag:!!r.user_is_locked_flag
@@ -108,6 +112,7 @@ function App(){
               <th style={{cursor:'pointer'}} onClick={()=>sort('user_login_name')}>Login Name<SI col="user_login_name"/></th>
               <th style={{cursor:'pointer'}} onClick={()=>sort('display_name')}>User Name<SI col="display_name"/></th>
               <th style={{cursor:'pointer'}} onClick={()=>sort('display_dealer_company_name')}>Dealer Company Name<SI col="display_dealer_company_name"/></th>
+              <th style={{cursor:'pointer'}} onClick={()=>sort('warehouse_name')}>Warehouse<SI col="warehouse_name"/></th>
               <th style={{cursor:'pointer'}} onClick={()=>sort('display_phone')}>Phone<SI col="display_phone"/></th>
               <th style={{cursor:'pointer'}} onClick={()=>sort('role_name')}>Role<SI col="role_name"/></th>
               <th style={{width:'90px',textAlign:'center'}}>Status</th>
@@ -116,11 +121,12 @@ function App(){
               <th style={{cursor:'pointer', width:'160px'}} onClick={()=>sort('updated_by')}>Updated By<SI col="updated_by"/></th>
               <th style={{width:'90px',textAlign:'center'}}>Action</th>
             </tr></thead>
-            <tbody>{filtered.length===0?<tr><td colSpan="10" className="text-center text-muted py-4">No users found</td></tr>:
+            <tbody>{filtered.length===0?<tr><td colSpan="11" className="text-center text-muted py-4">No users found</td></tr>:
               filtered.map(r=><tr key={r.user_id}>
                 <td><span className="badge bg-primary">{r.user_login_name||'—'}</span></td>
                 <td>{r.display_name||<span className="text-muted">—</span>}</td>
                 <td>{r.display_dealer_company_name||<span className="text-muted">—</span>}</td>
+                <td>{r.warehouse_name||<span className="text-muted">—</span>}</td>
                 <td>{r.display_phone||<span className="text-muted">—</span>}</td>
                 <td><span className="badge bg-info text-dark">{r.role_name||'—'}</span></td>
                 <td className="text-center">{r.user_is_active_flag?<span className="badge bg-success">Active</span>:<span className="badge bg-secondary">Inactive</span>}</td>
@@ -150,9 +156,14 @@ function App(){
               <div className="col-md-6"><label className="form-label fw-semibold">Password {editId&&<span className="text-muted small">(leave blank to keep)</span>}</label>
                 <input className="form-control" type="password" value={form.password} placeholder={editId?'Leave blank to keep current':'Default: Change@123'} onChange={e=>setForm({...form,password:e.target.value})}/></div>
               <div className="col-md-6"><label className="form-label fw-semibold">Name <span className="text-danger">*</span></label>
-                <input className="form-control" value={form.user_name} onChange={e=>setForm({...form,user_name:e.target.value})} disabled={isDealerEdit} required/></div>
+                <input className="form-control" value={form.user_name} onChange={e=>setForm({...form,user_name:e.target.value})} disabled={isDealerEdit||isStockManagerEdit} required/></div>
               {isDealerEdit && <div className="col-12"><label className="form-label fw-semibold">Dealer Company Name</label>
                 <input className="form-control" value={form.dealer_company_name||''} disabled /></div>}
+              {isStockManagerEdit && <div className="col-12"><label className="form-label fw-semibold">Warehouse <span className="text-danger">*</span></label>
+                <select className="form-select" value={form.user_warehouse_id||''} onChange={e=>setForm({...form,user_warehouse_id:e.target.value})}>
+                  <option value="">-- Select Warehouse --</option>
+                  {warehouses.map(w=><option key={w.user_warehouse_id} value={w.user_warehouse_id}>{w.warehouse_name}</option>)}
+                </select></div>}
               <div className="col-md-6"><label className="form-label fw-semibold">Email <span className="text-muted">(optional)</span></label>
                 <input className="form-control" type="email" value={form.user_email} onChange={e=>setForm({...form,user_email:e.target.value})}/></div>
               <div className="col-md-6"><label className="form-label fw-semibold">Phone <span className="text-muted fw-normal small">(10 digits only, optional)</span></label>

@@ -42,6 +42,7 @@ async function findUserByLoginName(loginName) {
             u.${loginColumn} as user_login_name,
             u.password_hash,
             u.dealer_id,
+            u.user_warehouse_id,
             r.role_name as role,
             u.user_role_id as role_id,
             COALESCE(u.user_is_active_flag, TRUE) as user_is_active_flag,
@@ -64,6 +65,7 @@ async function findUserById(id) {
             u.user_email as email,
             u.${loginColumn} as user_login_name,
             u.dealer_id,
+            u.user_warehouse_id,
             r.role_name as role,
             u.user_role_id as role_id,
             COALESCE(u.user_is_active_flag, TRUE) as user_is_active_flag,
@@ -93,6 +95,7 @@ async function findUserByPhone(phone) {
 async function createLoginUser({
   roleId,
   dealerId = null,
+  userWarehouseId = null,
   userLoginName,
   password,
   userName = null,
@@ -116,6 +119,7 @@ async function createLoginUser({
   addValue('user_role_id', roleId);
 
   if (await hasUsersColumn('dealer_id')) addValue('dealer_id', dealerId);
+  if (await hasUsersColumn('user_warehouse_id')) addValue('user_warehouse_id', userWarehouseId);
 
   if (await hasUsersColumn('user_login_name')) addValue('user_login_name', String(userLoginName).trim());
   else addValue('user_name', String(userLoginName).trim());
@@ -150,7 +154,8 @@ async function createLoginUser({
                ${loginColumn} as user_login_name,
                user_email as email,
                user_role_id as role_id,
-               dealer_id`,
+               dealer_id,
+               user_warehouse_id`,
     values
   );
 

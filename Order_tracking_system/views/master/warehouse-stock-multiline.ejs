@@ -103,7 +103,7 @@ function WarehouseStockApp() {
   const fetchInventory = async () => {
     setLoadingInventory(true);
     try {
-      let url = '/api/warehouse-inventory/summary/by-warehouse';
+      let url = '/api/warehouse-inventory';
       const params = new URLSearchParams();
       if (startDate1) params.append('startDate', startDate1);
       if (endDate1) params.append('endDate', endDate1);
@@ -241,8 +241,8 @@ function WarehouseStockApp() {
 
     const data = filteredInventory.map(row => ({
       'Warehouse': row.warehouse_name || '—',
-      'Total Stock': row.total_stock_qty || 0,
-      'Products': row.products || '—',
+      'Product': row.product_name || '—',
+      'Quantity': row.current_qty || 0,
       'Last Updated': row.last_updated ? new Date(row.last_updated).toLocaleDateString() : '—'
     }));
 
@@ -299,7 +299,7 @@ function WarehouseStockApp() {
     const matchWarehouse = !selectedWarehouse1 || row.warehouse_id === parseInt(selectedWarehouse1);
     const matchSearch = !searchTerm1 ||
       (row.warehouse_name && row.warehouse_name.toLowerCase().includes(searchTerm1.toLowerCase())) ||
-      (row.products && row.products.toLowerCase().includes(searchTerm1.toLowerCase()));
+      (row.product_name && row.product_name.toLowerCase().includes(searchTerm1.toLowerCase()));
     return matchWarehouse && matchSearch;
   });
 
@@ -318,11 +318,16 @@ function WarehouseStockApp() {
       <Toast msg={toast.msg} type={toast.type} onClose={() => setToast({ msg: '' })} />
 
       {/* Header with Enter Stock Button */}
-      <div className="mb-4 d-flex justify-content-between align-items-center">
-        <h4 className="fw-semibold mb-0">Warehouse Stock Management</h4>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-          ➕ Enter stock
-        </button>
+      <div className="mb-4">
+        <div className="d-flex justify-content-between align-items-center mb-3">
+          <h4 className="fw-semibold mb-0">Warehouse Stock Management</h4>
+          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+            📥 Add Inward Stock
+          </button>
+        </div>
+        <div className="alert alert-info alert-sm mb-0" style={{fontSize: '0.9rem'}}>
+          <strong>ℹ️ Note:</strong> Outward stock will be auto-managed when dispatching orders. This page is for inward stock entry only.
+        </div>
       </div>
 
       {/* ════════════════════════════════════════════════════════════════ */}
@@ -385,7 +390,7 @@ function WarehouseStockApp() {
             </div>
 
             <div className="small text-muted">
-              {filteredInventory.length} warehouse(s) | Total: {filteredInventory.reduce((sum, w) => sum + (w.total_stock_qty || 0), 0)} units
+              {filteredInventory.length} item(s) | Total: {filteredInventory.reduce((sum, row) => sum + (row.current_qty || 0), 0)} units
             </div>
           </div>
 
@@ -404,20 +409,18 @@ function WarehouseStockApp() {
                   <thead className="table-light">
                     <tr>
                       <th>Warehouse</th>
-                      <th style={{width:'100px'}} className="text-center">Total Stock</th>
-                      <th>Products (Qty)</th>
+                      <th>Product</th>
+                      <th style={{width:'100px'}} className="text-center">Quantity</th>
                       <th style={{width:'120px'}}>Last Updated</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredInventory.map((w) => (
-                      <tr key={w.warehouse_id}>
-                        <td className="small fw-semibold">{w.warehouse_name}</td>
-                        <td className="text-center fw-bold text-success">{w.total_stock_qty}</td>
-                        <td className="small">
-                          {w.products ? w.products.split(', ').map((p, i) => <div key={i}>• {p}</div>) : '—'}
-                        </td>
-                        <td className="small">{w.last_updated ? new Date(w.last_updated).toLocaleDateString() : '—'}</td>
+                    {filteredInventory.map((row, idx) => (
+                      <tr key={`${row.warehouse_id}-${row.product_id}-${idx}`}>
+                        <td className="small fw-semibold">{row.warehouse_name}</td>
+                        <td className="small">{row.product_name || '—'}</td>
+                        <td className="text-center fw-bold text-success">{row.current_qty || 0}</td>
+                        <td className="small">{row.last_updated ? new Date(row.last_updated).toLocaleDateString() : '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -634,14 +637,14 @@ function WarehouseStockApp() {
           <div className="modal-dialog modal-dialog-centered modal-lg">
             <div className="modal-content">
               <form onSubmit={handleSaveStock}>
-                <div className="modal-header">
-                  <h5 className="modal-title">➕ Enter stock inventory</h5>
+                <div className="modal-header bg-light">
+                  <h5 className="modal-title fw-semibold">📥 Stock Entry Details (Inward Stock)</h5>
                   <button type="button" className="btn-close" onClick={() => setShowModal(false)}></button>
                 </div>
                 <div className="modal-body">
                   {/* Warehouse & Date Section */}
-                  <div className="mb-4 p-3 border rounded" style={{ background: '#f9f9f9' }}>
-                    <h6 className="fw-semibold mb-3 text-primary">Stock Entry Details</h6>
+                  <div className="mb-4 p-3 border rounded" style={{ background: '#f0f8ff' }}>
+                    <h6 className="fw-semibold mb-3 text-primary">📥 Inward Stock Entry</h6>
 
                     <div className="row g-3 mb-3">
                       <div className="col-md-6">

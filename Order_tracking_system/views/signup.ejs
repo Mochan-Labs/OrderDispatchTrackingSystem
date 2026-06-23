@@ -45,6 +45,16 @@
                 </datalist>
                 <input type="hidden" id="dealer_id" name="dealer_id" value="<%= formData && formData.dealer_id ? formData.dealer_id : '' %>" />
               </div>
+
+              <div class="col-md-6" id="warehouseSection" style="display:none;">
+                <label class="form-label">Warehouse <span class="text-danger">*</span></label>
+                <select id="warehouse_id" name="warehouse_id" class="form-select" disabled>
+                  <option value="">-- Select Warehouse --</option>
+                  <% (warehouses || []).forEach(function(w){ %>
+                    <option value="<%= w.warehouse_id %>" <%= formData && String(formData.warehouse_id || '') === String(w.warehouse_id) ? 'selected' : '' %>><%= w.warehouse_name %></option>
+                  <% }) %>
+                </select>
+              </div>
             </div>
 
             <div class="row g-3 mt-1" id="loginCoreFields">
@@ -113,6 +123,8 @@
     const dealerSection = document.getElementById('dealerSection');
     const dealerLookup = document.getElementById('dealer_lookup');
     const dealerSelect = document.getElementById('dealer_id');
+    const warehouseSection = document.getElementById('warehouseSection');
+    const warehouseSelect = document.getElementById('warehouse_id');
     const userLoginName = document.getElementById('user_login_name');
     const passwordInput = document.getElementById('password');
     const userName = document.getElementById('user_name');
@@ -208,6 +220,8 @@
     function applyRoleRules() {
       const hasRole = !!roleSelect.value;
       const isDealer = selectedRoleName() === 'DEALER';
+      const isStockManager = selectedRoleName() === 'STOCK_MANAGER';
+      const isDispatcher = selectedRoleName() === 'DISPATCHER';
 
       setEnabled(userLoginName, hasRole);
       setEnabled(passwordInput, hasRole);
@@ -217,15 +231,22 @@
       setEnabled(dealerLookup, hasRole && isDealer);
       dealerLookup.required = hasRole && isDealer;
 
-      otherRoleFields.style.display = (hasRole && !isDealer) ? '' : 'none';
-      setEnabled(userName, hasRole && !isDealer);
-      setEnabled(userPhone, hasRole && !isDealer);
-      setEnabled(userEmail, hasRole && !isDealer);
+      warehouseSection.style.display = (hasRole && (isStockManager || isDispatcher)) ? '' : 'none';
+      setEnabled(warehouseSelect, hasRole && (isStockManager || isDispatcher));
+      warehouseSelect.required = hasRole && (isStockManager || isDispatcher);
+
+      otherRoleFields.style.display = (hasRole && !isDealer && !isStockManager && !isDispatcher) ? '' : 'none';
+      setEnabled(userName, hasRole && !isDealer && !isStockManager && !isDispatcher);
+      setEnabled(userPhone, hasRole && !isDealer && !isStockManager && !isDispatcher);
+      setEnabled(userEmail, hasRole && !isDealer && !isStockManager && !isDispatcher);
 
       dealerUsersSection.style.display = hasRole ? '' : 'none';
       if (!isDealer) {
         dealerLookup.value = '';
         dealerSelect.value = '';
+      }
+      if (!isStockManager && !isDispatcher) {
+        warehouseSelect.value = '';
       }
 
       syncDealerIdFromLookup();
@@ -258,6 +279,7 @@
         passwordInput.type = 'password';
         togglePasswordBtn.textContent = 'Show';
         dealerLookup.value = '';
+        warehouseSelect.value = '';
         applyRoleRules();
         renderDealerUsers();
       }, 0);

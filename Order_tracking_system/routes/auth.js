@@ -166,26 +166,36 @@ async function fetchSignupScreenData() {
       ORDER BY dealer_name`
   );
 
+  const warehousesRes = await pool.query(
+    `SELECT warehouse_id, warehouse_name
+       FROM odts.warehouse_master
+      ORDER BY warehouse_name`
+  );
+
   const usersRes = await pool.query(
     `SELECT u.user_id,
             u.user_role_id,
             u.dealer_id,
+            u.user_warehouse_id,
             u.user_login_name,
             u.user_name,
         ${hasDealerCompanyName ? 'd.dealer_company_name' : 'd.dealer_name AS dealer_company_name'},
         d.dealer_name,
+            w.warehouse_name,
             COALESCE(u.user_is_active_flag, TRUE)  AS user_is_active_flag,
             COALESCE(u.user_is_locked_flag, FALSE) AS user_is_locked_flag,
             r.role_name
        FROM odts.user_master u
        LEFT JOIN odts.user_roles_master r ON r.role_id = u.user_role_id
       LEFT JOIN odts.dealer_master d ON d.dealer_id = u.dealer_id
+      LEFT JOIN odts.warehouse_master w ON w.warehouse_id = u.user_warehouse_id
       ORDER BY u.user_role_id, u.dealer_id, u.user_login_name`
   );
 
   return {
     roles: rolesRes.rows,
     dealers: dealersRes.rows,
+    warehouses: warehousesRes.rows,
     existingUsers: usersRes.rows,
   };
 }
@@ -197,6 +207,7 @@ async function renderSignup(req, res, { error = null, success = null, formData =
     success,
     roles: data.roles,
     dealers: data.dealers,
+    warehouses: data.warehouses,
     existingUsers: data.existingUsers,
     formData,
     user: req.session && req.session.user ? req.session.user : null,
@@ -313,7 +324,7 @@ router.get('/signup', ensureAdminOrOfficeExecutive, async (req, res) => {
     await renderSignup(req, res, { error: null, success: null, formData: {} });
   } catch (err) {
     console.error(err);
-    res.render('signup', { error: 'Unable to load page data', success: null, roles: [], dealers: [], existingUsers: [], formData: {} });
+    res.render('signup', { error: 'Unable to load page data', success: null, roles: [], dealers: [], warehouses: [], existingUsers: [], formData: {} });
   }
 });
 
@@ -321,6 +332,7 @@ router.post('/signup', ensureAdminOrOfficeExecutive, async (req, res) => {
   const {
     role_id,
     dealer_id,
+    warehouse_id,
     user_login_name,
     password,
     user_name,
@@ -331,6 +343,7 @@ router.post('/signup', ensureAdminOrOfficeExecutive, async (req, res) => {
   const formData = {
     role_id: role_id || '',
     dealer_id: dealer_id || '',
+    warehouse_id: warehouse_id || '',
     user_login_name: user_login_name || '',
     user_name: user_name || '',
     user_phone: user_phone || '',
@@ -349,6 +362,8 @@ router.post('/signup', ensureAdminOrOfficeExecutive, async (req, res) => {
     }
     const role = roleRes.rows[0];
     const isDealerRole = String(role.role_name || '').toUpperCase() === 'DEALER';
+    const isStockManagerRole = String(role.role_name || '').toUpperCase() === 'STOCK_MANAGER';
+    const isDispatcherRole = String(role.role_name || '').toUpperCase() === 'DISPATCHER';
 
     let parsedDealerId = null;
     if (isDealerRole) {
@@ -371,31 +386,20 @@ router.post('/signup', ensureAdminOrOfficeExecutive, async (req, res) => {
       }
     }
 
-    if (!user_login_name || !String(user_login_name).trim()) {
-      return renderSignup(req, res, { error: 'User login name is mandatory.', formData });
-    }
+    let parsedWarehouseId = null;
+    if (isStockManagerRole || isDispatcherRole) {
+      parsedWarehouseId = parseInt(warehouse_id, 10);
+      if (!parsedWarehouseId) {
+        return renderSignup(req, res, { error: `Warehouse is mandatory for ${role.role_name} role.`, formData });
+      }
 
-    if (!password || !String(password).trim()) {
-      return renderSignup(req, res, { error: 'Password is mandatory.', formData });
-    }
-
-    if (user_phone && !/^\d{10}$/.test(String(user_phone).trim())) {
-      return renderSignup(req, res, { error: 'Phone must be exactly 10 digits when provided.', formData });
-    }
-
-    if (user_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(user_email).trim())) {
-      return renderSignup(req, res, { error: 'Please provide a valid email address.', formData });
-    }
-
-    const existingLogin = await pool.query('SELECT user_id FROM odts.user_master WHERE user_login_name = $1', [String(user_login_name).trim()]);
-    if (existingLogin.rows.length) {
-      return renderSignup(req, res, { error: 'User login name already exists.', formData });
-    }
-
-    if (user_email && String(user_email).trim()) {
-      const existingEmail = await pool.query('SELECT user_id FROM odts.user_master WHERE user_email = $1', [String(user_email).trim().toLowerCase()]);
-      if (existingEmail.rows.length) {
-        return renderSignup(req, res, { error: 'Email already exists.', formData });
+      const warehouseExists = await pool.query(
+        `SELECT warehouse_id FROM odts.warehouse_master
+         WHERE warehouse_id = $1`,
+        [parsedWarehouseId]
+      );
+      if (!warehouseExists.rows.length) {
+        return renderSignup(req, res, { error: 'Selected warehouse is invalid.', formData });
       }
     }
 
@@ -404,6 +408,7 @@ router.post('/signup', ensureAdminOrOfficeExecutive, async (req, res) => {
     await userModel.createLoginUser({
       roleId: parsedRoleId,
       dealerId: isDealerRole ? parsedDealerId : null,
+      userWarehouseId: (isStockManagerRole || isDispatcherRole) ? parsedWarehouseId : null,
       userLoginName: String(user_login_name).trim(),
       password: String(password),
       userName: isDealerRole ? null : (user_name ? String(user_name).trim() : null),
@@ -484,7 +489,8 @@ router.post('/signin', async (req, res) => {
       email: user.email,
       mobile: user.mobile || null,
       role: user.role || 'user',
-      dealer_id: user.dealer_id || null
+      dealer_id: user.dealer_id || null,
+      user_warehouse_id: user.user_warehouse_id || null
     };
 
     await userModel.updateUserLastLoginAt(user.id);
@@ -531,7 +537,11 @@ router.get('/dashboard', ensureAuthenticated, (req, res) => {
     return res.render('dashboard-stock-manager', { user: req.session.user });
   }
 
-  // Default dashboard for ADMIN, OFFICE_EXECUTIVE, DISPATCHER, DEALER, SALES_OFFICER
+  if (userRole === 'DISPATCHER') {
+    return res.render('dashboard-dispatcher', { user: req.session.user });
+  }
+
+  // Default dashboard for ADMIN, OFFICE_EXECUTIVE, DEALER, SALES_OFFICER
   res.render('dashboard', { user: req.session.user });
 });
 
