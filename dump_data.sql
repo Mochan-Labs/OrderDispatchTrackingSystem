@@ -33,7 +33,7 @@ VALUES
 INSERT INTO odts.code_reference (code_type, code_label, code, code_desc, code_sort_order)
 VALUES
   ('loading_type',     NULL,        'SLF_DOT',  'Self DOT (Dealer own truck)',  1 ),
-  ('loading_type',     NULL,        'CMP_TRN',  'Company Transport',            2 ),
+  ('loading_type',     NULL,        'CMP_TRN',  'Company Transport',            2 );
  
 --
 INSERT INTO odts.warehouse_master (warehouse_type, warehouse_ui_label, warehouse_code, warehouse_name, warehouse_ui_order)
