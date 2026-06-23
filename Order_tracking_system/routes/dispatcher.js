@@ -459,80 +459,51 @@ router.patch('/api/dispatcher/orders/:id/dispatch', ensureDispatcher, async (req
       [orderId]
     );
 
-    // If dispatch doesn't exist, create it (allow admin to create dispatch via PATCH)
+    // If dispatch doesn't exist, create it
+    let dispatch_id;
+    const userId = req.session.user.id;
+
     if (!existing.rows.length) {
-      const userId = req.session.user.id;
       const dispatchInsert = await pool.query(
-        `INSERT INTO odts.order_dispatch (order_id, dispatch_vehicle_number, driver_name, driver_phone, bilty_number, actual_loading_location_code, image_url, image_type, image_original_size, image_compressed_size, created_by, updated_by, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
+        `INSERT INTO odts.order_dispatch (order_id, created_by, updated_by)
+         VALUES ($1, $2, $2)
          RETURNING dispatch_id`,
-        [orderId, vehicle_number?.trim().toUpperCase() || null, driver_name || null, driver_phone?.trim() || null, bilty_number?.trim() || null, actual_loading_location_code?.trim() || null, image_url || null, image_type || null, image_original_size || null, image_compressed_size || null, userId, userId]
+        [orderId, userId]
       );
-
-      // Update order status to DISPATCHED
-      await pool.query(
-        'UPDATE odts.dealer_orders SET order_status = $1, updated_at = NOW() WHERE order_id = $2',
-        ['DISPATCHED', orderId]
-      );
-
-      return res.status(201).json(dispatchInsert.rows[0]);
+      dispatch_id = dispatchInsert.rows[0].dispatch_id;
+    } else {
+      dispatch_id = existing.rows[0].dispatch_id;
     }
 
-    // Update order_dispatch record with non-null values only
-    const updates = [];
-    const values = [];
-    let paramIndex = 1;
+    // Insert/update dispatch item details in order_dispatch_items
+    const dispatchItemInsert = await pool.query(
+      `INSERT INTO odts.order_dispatch_items (
+        dispatch_id, dispatch_vehicle_number, dispatch_driver_name, dispatch_driver_phone,
+        dispatch_bilty_number, dispatch_receipt_image_url, dispatch_receipt_image_type,
+        dispatch_receipt_image_orig_size, dispatch_receipt_image_comp_size, created_by, updated_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+      RETURNING *`,
+      [
+        dispatch_id,
+        vehicle_number?.trim().toUpperCase() || null,
+        driver_name?.trim() || null,
+        driver_phone?.trim() || null,
+        bilty_number?.trim() || null,
+        image_url || null,
+        image_type || null,
+        image_original_size || null,
+        image_compressed_size || null,
+        userId
+      ]
+    );
 
-    if (vehicle_number) {
-      updates.push(`dispatch_vehicle_number = $${paramIndex++}`);
-      values.push(vehicle_number.toUpperCase().trim());
-    }
-    if (driver_name) {
-      updates.push(`driver_name = $${paramIndex++}`);
-      values.push(driver_name.trim());
-    }
-    if (driver_phone) {
-      updates.push(`driver_phone = $${paramIndex++}`);
-      values.push(driver_phone.trim());
-    }
-    if (bilty_number) {
-      updates.push(`bilty_number = $${paramIndex++}`);
-      values.push(bilty_number.trim());
-    }
-    if (actual_loading_location_code) {
-      updates.push(`actual_loading_location_code = $${paramIndex++}`);
-      values.push(actual_loading_location_code.trim());
-    }
-    if (image_url) {
-      updates.push(`image_url = $${paramIndex++}`);
-      values.push(image_url);
-      if (image_type) {
-        updates.push(`image_type = $${paramIndex++}`);
-        values.push(image_type);
-      }
-      if (image_original_size) {
-        updates.push(`image_original_size = $${paramIndex++}`);
-        values.push(image_original_size);
-      }
-      if (image_compressed_size) {
-        updates.push(`image_compressed_size = $${paramIndex++}`);
-        values.push(image_compressed_size);
-      }
-      updates.push(`image_uploaded_at = NOW()`);
-    }
+    // Update order status to DISPATCHED
+    await pool.query(
+      'UPDATE odts.dealer_orders SET order_status = $1, updated_by = $2, updated_at = NOW() WHERE order_id = $3',
+      ['DISPATCHED', userId, orderId]
+    );
 
-    updates.push(`updated_by = $${paramIndex++}`);
-    values.push(req.session.user.id);
-
-    updates.push(`updated_at = NOW()`);
-    values.push(orderId);
-
-    const query = `UPDATE odts.order_dispatch SET ${updates.join(', ')} WHERE order_id = $${paramIndex}`;
-
-    console.log('[Dispatcher] Update query:', query);
-    await pool.query(query, values);
-
-    res.json({ success: true, message: 'Dispatch details updated successfully' });
+    res.json({ success: true, message: 'Dispatch details updated successfully', dispatch_item: dispatchItemInsert.rows[0] });
   } catch (e) {
     console.error('[Dispatcher] update dispatch details error:', e.message, e.detail);
     res.status(500).json({ error: e.message });

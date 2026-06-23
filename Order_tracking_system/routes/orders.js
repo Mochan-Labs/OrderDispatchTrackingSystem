@@ -627,13 +627,15 @@ router.get('/api/dealer/orders/by-driver/:phone', ensureDealer, async (req, res)
     const phone = String(req.params.phone || '').trim();
     const result = await pool.query(`
       SELECT o.*, d.dealer_name,
-             od.dispatch_id, od.dispatch_vehicle_number, od.driver_name AS dispatch_driver_name, od.driver_phone AS dispatch_driver_phone,
-             od.bilty_number, od.actual_loading_location_code, od.created_at AS dispatch_created_at,
+             od.dispatch_id, od.created_at AS dispatch_created_at,
+             odi.dispatch_vehicle_number, odi.dispatch_driver_name, odi.dispatch_driver_phone AS dispatch_driver_phone,
+             odi.dispatch_bilty_number,
              ${ITEMS_SUBQUERY}
       FROM odts.dealer_orders o
       LEFT JOIN odts.dealer_master d ON d.dealer_id = o.dealer_id
       INNER JOIN odts.order_dispatch od ON od.order_id = o.order_id
-      WHERE od.driver_phone = $1
+      INNER JOIN odts.order_dispatch_items odi ON odi.dispatch_id = od.dispatch_id
+      WHERE odi.dispatch_driver_phone = $1
     `, [phone]);
     res.json(result.rows.map(toOrderShape));
   } catch (e) {
