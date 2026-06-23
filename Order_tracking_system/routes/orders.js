@@ -234,7 +234,7 @@ async function fetchOrders({ dealerId, startDate, endDate }) {
            ${ITEMS_SUBQUERY}
     FROM odts.dealer_orders o
     LEFT JOIN odts.dealer_master       d  ON d.dealer_id  = o.dealer_id
-    LEFT JOIN odts.dealer_party  dp ON dp.party_id  = o.party_id
+    LEFT JOIN odts.dealer_party_master  dp ON dp.party_id  = o.party_id
     LEFT JOIN odts.code_reference lt ON lt.code_type = 'loading_type'     AND lt.code = o.load_type_code
     LEFT JOIN odts.code_reference pl ON pl.code_type = 'loading_location' AND pl.code = o.preferred_location_code
     LEFT JOIN odts.order_dispatch od ON od.order_id  = o.order_id
@@ -644,7 +644,7 @@ router.get('/api/dealer/orders/:id', ensureDealer, async (req, res) => {
              ${ITEMS_SUBQUERY}
       FROM odts.dealer_orders o
       LEFT JOIN odts.dealer_master       d  ON d.dealer_id  = o.dealer_id
-      LEFT JOIN odts.dealer_party  dp ON dp.party_id  = o.party_id
+      LEFT JOIN odts.dealer_party_master  dp ON dp.party_id  = o.party_id
       LEFT JOIN odts.code_reference lt ON lt.code_type = 'loading_type'     AND lt.code = o.load_type_code
       LEFT JOIN odts.code_reference pl ON pl.code_type = 'loading_location' AND pl.code = o.preferred_location_code
       LEFT JOIN odts.order_dispatch od ON od.order_id  = o.order_id
@@ -666,7 +666,7 @@ router.get('/api/dealer/parties', ensureDealer, async (req, res) => {
     const result = await pool.query(
       `SELECT dp.party_id, dp.party_code, dp.party_company_name, dp.party_name,
               dp.party_address, dp.party_phone
-         FROM odts.dealer_party dp
+         FROM odts.dealer_party_master dp
         WHERE dp.dealer_id = $1
           AND COALESCE(dp.party_is_active_flag, TRUE) = TRUE
         ORDER BY dp.party_company_name`,
@@ -692,7 +692,7 @@ router.post('/api/dealer/parties', ensureDealer, async (req, res) => {
     if (!userId) return res.status(400).json({ error: 'User session invalid.' });
 
     const result = await pool.query(
-      `INSERT INTO odts.dealer_party
+      `INSERT INTO odts.dealer_party_master
          (dealer_id, party_code, party_company_name, party_phone, party_address, party_is_active_flag, created_by, created_at, updated_by, updated_at)
        VALUES ($1, $2, $3, $4, $5, TRUE, $6, NOW(), $6, NOW())
        RETURNING party_id, party_company_name, party_phone, party_address`,
@@ -741,7 +741,7 @@ router.get('/api/admin/parties/:dealer_id', ensureDealer, async (req, res) => {
     const dealerId = parseInt(req.params.dealer_id);
     const result = await pool.query(`
       SELECT party_id, party_code, party_company_name, party_name, party_phone, party_address, party_is_active_flag
-      FROM odts.dealer_party
+      FROM odts.dealer_party_master
       WHERE dealer_id = $1
       ORDER BY party_company_name
     `, [dealerId]);
