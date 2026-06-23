@@ -512,12 +512,17 @@ select * from odts.dealer_order_items;
 --change item_id to order_item_id , pk
 --
 
--- =============================================================================
--- Fix: Update trigger functions to use correct column names
--- dispatch_product_id instead of product_id
--- dispatch_items_id instead of order_dispatch_item_id
--- =============================================================================
+alter table odts.dealer_orders
+drop column product_id;
 
+alter table odts.dealer_orders
+drop column order_quantity;
+
+ALTER TABLE odts.warehouse_inventory
+ADD CONSTRAINT uk_warehouse_inventory_wh_prod
+UNIQUE (warehouse_id, product_id);
+
+--
 -- Step 1: Drop existing triggers
 DROP TRIGGER IF EXISTS trg_warehouse_dispatch_out ON odts.order_dispatch_items CASCADE;
 DROP TRIGGER IF EXISTS fn_update_inventory_dispatch_out ON odts.order_dispatch_items CASCADE;
@@ -525,7 +530,7 @@ DROP TRIGGER IF EXISTS fn_update_inventory_dispatch_out ON odts.order_dispatch_i
 -- Step 2: Drop existing functions
 DROP FUNCTION IF EXISTS public.fn_update_inventory_dispatch_out() CASCADE;
 DROP FUNCTION IF EXISTS odts.fn_update_inventory_dispatch_out() CASCADE;
-
+--
 -- Step 3: Create corrected function in odts schema
 CREATE OR REPLACE FUNCTION odts.fn_update_inventory_dispatch_out()
 RETURNS trigger
@@ -542,13 +547,40 @@ BEGIN
   RETURN NEW;
 END;
 $function$;
-
+--
+CREATE OR REPLACE FUNCTION odts.fn_update_inventory_stock_in()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $function$
+BEGIN
+  INSERT INTO odts.warehouse_inventory (warehouse_id, product_id, current_qty, last_updated)
+  SELECT 
+    ws.warehouse_id,
+    NEW.warehouse_product_id,
+    NEW.warehouse_product_qty,
+    NOW()
+  FROM odts.warehouse_stock ws
+  WHERE ws.warehouse_stock_id = NEW.warehouse_stock_id
+  ON CONFLICT (warehouse_id, product_id)
+  DO UPDATE SET
+    current_qty = warehouse_inventory.current_qty + NEW.warehouse_product_qty,
+    last_updated = NOW();
+  
+  RETURN NEW;
+END;
+$function$;
+--
+CREATE TRIGGER trg_warehouse_stock_in
+AFTER INSERT ON odts.warehouse_stock_items
+FOR EACH ROW
+EXECUTE FUNCTION odts.fn_update_inventory_stock_in();
+--
 -- Step 4: Recreate the trigger
 CREATE TRIGGER trg_warehouse_dispatch_out
 AFTER INSERT ON odts.order_dispatch_items
 FOR EACH ROW
 EXECUTE FUNCTION odts.fn_update_inventory_dispatch_out();
-
+--
 -- Step 5: Verify the function and trigger
 SELECT pg_get_functiondef(oid) 
 FROM pg_proc 
