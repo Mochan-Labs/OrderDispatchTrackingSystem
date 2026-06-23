@@ -903,6 +903,19 @@ router.post('/api/dealer/orders', ensureDealer, async (req, res) => {
     item.order_quantity = parseFloat((parseInt(item.order_bags, 10) * KG_PER_BAG / 1000).toFixed(3));
   }
 
+  // When load type is SELF_DOT, driver details are required
+  if (load_type_code === 'SELF_DOT') {
+    if (!driver_name || !driver_name.trim()) {
+      return res.status(400).json({ error: 'Driver name is required for SELF_DOT orders' });
+    }
+    if (!driver_phone || !driver_phone.trim()) {
+      return res.status(400).json({ error: 'Driver phone is required for SELF_DOT orders' });
+    }
+    if (!vehicle_number || !vehicle_number.trim()) {
+      return res.status(400).json({ error: 'Vehicle number is required for SELF_DOT orders' });
+    }
+  }
+
   const dealer_id = req.session.user.dealer_id;
   if (!dealer_id) return res.status(400).json({ error: 'No dealer linked to this account.' });
 
@@ -1020,6 +1033,19 @@ router.post('/api/admin/orders', ensureAdmin, async (req, res) => {
     item.order_quantity = parseFloat((parseInt(item.order_bags, 10) * KG_PER_BAG / 1000).toFixed(3));
   }
 
+  // When load type is SELF_DOT, driver details are required
+  if (load_type_code === 'SELF_DOT') {
+    if (!driver_name || !driver_name.trim()) {
+      return res.status(400).json({ error: 'Driver name is required for SELF_DOT orders' });
+    }
+    if (!driver_phone || !driver_phone.trim()) {
+      return res.status(400).json({ error: 'Driver phone is required for SELF_DOT orders' });
+    }
+    if (!vehicle_number || !vehicle_number.trim()) {
+      return res.status(400).json({ error: 'Vehicle number is required for SELF_DOT orders' });
+    }
+  }
+
   const userId       = req.session.user.id;
   const totalQty     = items.reduce((sum, i) => sum + i.order_quantity, 0);
   const firstProduct = parseInt(items[0].product_id, 10);
@@ -1094,6 +1120,19 @@ router.put('/api/dealer/orders/:id', ensureDealer, async (req, res) => {
       return res.status(400).json({ error: `Row ${idx + 1}: number of bags is required` });
     }
     item.order_quantity = parseFloat((parseInt(item.order_bags, 10) * KG_PER_BAG / 1000).toFixed(3));
+  }
+
+  // When load type is SELF_DOT, driver details are required
+  if (load_type_code === 'SELF_DOT') {
+    if (!driver_name || !driver_name.trim()) {
+      return res.status(400).json({ error: 'Driver name is required for SELF_DOT orders' });
+    }
+    if (!driver_phone || !driver_phone.trim()) {
+      return res.status(400).json({ error: 'Driver phone is required for SELF_DOT orders' });
+    }
+    if (!vehicle_number || !vehicle_number.trim()) {
+      return res.status(400).json({ error: 'Vehicle number is required for SELF_DOT orders' });
+    }
   }
 
   const userRole = req.session.user.role;
