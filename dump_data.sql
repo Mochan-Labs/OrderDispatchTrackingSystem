@@ -18,9 +18,9 @@ values
 --
 insert into odts.product_master ( product_name, product_desc, product_is_active_flag) 
 values
-( 'GOLD', 'Premium grade product', true),
-( 'POWER', 'High performance  ', true),
-( 'PLUS', 'Standard product', true);
+  ( 'GOLD', 'Premium grade product', true),
+  ( 'POWER PLUS', 'High performance  ', true),
+  ( 'CONCRETE PLUS', 'Standard product', true);
 --
 -- Data for code reference table
 --
@@ -450,7 +450,19 @@ insert into odts.dealer_party_master (dealer_id, party_code, party_company_name,
 insert into odts.dealer_party_master (dealer_id, party_code, party_company_name, party_address, party_phone) values ('237','9111457767','SHIV SHAKTI ASSOCIATE','PAHARIA','9555452150');
 insert into odts.dealer_party_master (dealer_id, party_code, party_company_name, party_address, party_phone) values ('237','9111373717','TARA DEVI','CHIRAIGAON, NARAYANPUR','9118363046');
 insert into odts.dealer_party_master (dealer_id, party_code, party_company_name, party_address, party_phone) values ('238','9110235599','ROYAL TRADERS','BHORA TALAB LOHTA BAZAR','8318617656');
-—-
+--
+INSERT INTO odts.user_master (
+user_id,
+user_role_id,
+dealer_id,
+user_name,
+user_login_name,
+password_hash,
+user_phone,
+user_email
+)
+values (0,0, null, 'system', 'system', public.crypt('system123', public.gen_salt('bf')), NULL, NULL);
+
 --
 INSERT INTO odts.user_master (
   user_login_name,
@@ -534,19 +546,7 @@ FROM (
 ) d     
 JOIN odts.user_roles_master ur         
     ON ur.role_name = 'DEALER';     
-—
-
-INSERT INTO odts.user_master (
-user_role_id,
-dealer_id,
-user_name,
-user_login_name,
-password_hash,
-user_phone,
-user_email
-)
-values (0, null, 'system', 'system', public.crypt('system123', public.gen_salt('bf')), NULL, NULL);
---
+—-
 INSERT INTO odts.whatsapp_message_templates (template_name, message_body, created_by) VALUES
 ('Order Confirmation', 'Hi {{dealer_name}}, your order has been confirmed. Your Dealer Code: {{dealer_code}}. We will contact you shortly with dispatch details.', 0),
 ('Dispatch Alert', 'Hi {{dealer_name}}, your order is on its way! Driver will reach soon. Contact: {{dealer_phone}}', 0),
