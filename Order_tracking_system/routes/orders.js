@@ -829,15 +829,13 @@ router.post('/api/admin/orders/on-behalf', ensureDealer, async (req, res) => {
 
       const orderResult = await client.query(`
         INSERT INTO odts.dealer_orders
-          (dealer_id, product_id, order_quantity, party_id, load_type_code, preferred_location_code,
+          (dealer_id, party_id, load_type_code, preferred_location_code,
            driver_name, driver_phone, vehicle_number,
            order_status, order_date, created_by, created_at, updated_by, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ORDER_PLACED', NOW(), $10, NOW(), $10, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'ORDER_PLACED', NOW(), $8, NOW(), $8, NOW())
         RETURNING *
       `, [
         dealer_id,
-        firstProduct,
-        Math.max(1, Math.ceil(totalQty)),
         party_id ? parseInt(party_id, 10) : null,
         load_type_code || null,
         preferred_location_code || null,
@@ -931,15 +929,13 @@ router.post('/api/dealer/orders', ensureDealer, async (req, res) => {
 
     const orderResult = await client.query(`
       INSERT INTO odts.dealer_orders
-        (dealer_id, product_id, order_quantity, party_id, load_type_code, preferred_location_code,
+        (dealer_id, party_id, load_type_code, preferred_location_code,
          driver_name, driver_phone, vehicle_number,
          order_status, order_date, created_by, created_at, updated_by, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ORDER_PLACED', NOW(), $10, NOW(), $10, NOW())
+      VALUES ($1, $2, $3, $4, $5, $6, $7, 'ORDER_PLACED', NOW(), $8, NOW(), $8, NOW())
       RETURNING *
     `, [
       dealer_id,
-      firstProduct,
-      Math.max(1, Math.ceil(totalQty)),
       party_id  ? parseInt(party_id, 10)   : null,
       load_type_code          || null,
       preferred_location_code || null,
@@ -1034,15 +1030,13 @@ router.post('/api/admin/orders', ensureAdmin, async (req, res) => {
 
     const orderResult = await client.query(`
       INSERT INTO odts.dealer_orders
-        (dealer_id, product_id, order_quantity, party_id, load_type_code, preferred_location_code,
+        (dealer_id, party_id, load_type_code, preferred_location_code,
          driver_name, driver_phone, vehicle_number,
          order_status, order_date, created_by, created_at, updated_by, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ORDER_PLACED', NOW(), $10, NOW(), $10, NOW())
+      VALUES ($1, $2, $3, $4, $5, $6, $7, 'ORDER_PLACED', NOW(), $8, NOW(), $8, NOW())
       RETURNING *
     `, [
       parseInt(dealer_id, 10),
-      firstProduct,
-      Math.max(1, Math.ceil(totalQty)),
       party_id  ? parseInt(party_id, 10)   : null,
       load_type_code          || null,
       preferred_location_code || null,
@@ -1159,20 +1153,16 @@ router.put('/api/dealer/orders/:id', ensureDealer, async (req, res) => {
     // Update the main order record
     await client.query(`
       UPDATE odts.dealer_orders
-      SET product_id = $1,
-          order_quantity = $2,
-          party_id = $3,
-          load_type_code = $4,
-          preferred_location_code = $5,
-          driver_name = $6,
-          driver_phone = $7,
-          vehicle_number = $8,
-          updated_by = $9,
+      SET party_id = $1,
+          load_type_code = $2,
+          preferred_location_code = $3,
+          driver_name = $4,
+          driver_phone = $5,
+          vehicle_number = $6,
+          updated_by = $7,
           updated_at = NOW()
-      WHERE order_id = $10
+      WHERE order_id = $8
     `, [
-      firstProduct,
-      Math.max(1, Math.ceil(totalQty)),
       party_id ? parseInt(party_id, 10) : null,
       load_type_code || null,
       preferred_location_code || null,
