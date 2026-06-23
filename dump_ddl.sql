@@ -36,18 +36,24 @@ CREATE TABLE odts.code_reference (
 CREATE TABLE odts.dealer_orders (
     order_id integer NOT NULL,
     dealer_id integer NOT NULL,
-    product_id integer NOT NULL,
-    order_quantity integer NOT NULL,
     order_date timestamp NOT NULL,
     order_status VARCHAR(255) NOT NULL,
     party_id integer,
     preferred_location_code VARCHAR(20),
     load_type_code VARCHAR(20),
+    on_hold_reason text,
+    on_hold_by integer,
+    on_hold_by_role VARCHAR(255),
+    order_executed_at TIMESTAMP,
+    driver_name VARCHAR(255),
+    driver_phone VARCHAR(20),
+    vehicle_number VARCHAR(50),
     created_by integer DEFAULT 0 NOT NULL,
     created_at timestamp  DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_by integer NOT NULL,
-    updated_at timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT dealer_orders_order_quantity_check CHECK ((order_quantity > 0))
+    updated_at timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL
+    --to check
+    --CONSTRAINT dealer_orders_order_quantity_check CHECK ((order_quantity > 0))
 );
 --
 --
@@ -141,6 +147,11 @@ CREATE TABLE odts.order_dispatch (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 --
+alter table odts.order_dispatch
+drop column driver_id,
+drop column dispatch_vehicle_number,
+drop column built_number,
+drop column dispatch_receipt;
 --
 -- Name: TABLE order_dispatch; Type: COMMENT; Schema: odts; Owner: odts_admin
 --
