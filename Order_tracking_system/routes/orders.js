@@ -228,17 +228,17 @@ async function fetchOrders({ dealerId, startDate, endDate }) {
            d.dealer_name, d.dealer_company_name,
            dp.party_company_name, dp.party_name AS party_name_col, dp.party_phone, dp.party_address,
            lt.code_desc       AS load_type_desc,
-           pl.code_desc       AS preferred_location_desc,
-           al.code_desc       AS actual_loading_location_desc,
+           wm.warehouse_name  AS preferred_location_desc,
+           wm_actual.warehouse_name  AS actual_loading_location_desc,
            od.dispatch_id,
            ${ITEMS_SUBQUERY}
     FROM odts.dealer_orders o
     LEFT JOIN odts.dealer_master       d  ON d.dealer_id  = o.dealer_id
     LEFT JOIN odts.dealer_party_master  dp ON dp.party_id  = o.party_id
     LEFT JOIN odts.code_reference lt ON lt.code_type = 'loading_type'     AND lt.code = o.load_type_code
-    LEFT JOIN odts.code_reference pl ON pl.code_type = 'loading_location' AND pl.code = o.preferred_location_code
+    LEFT JOIN odts.warehouse_master wm ON wm.warehouse_code = o.preferred_location_code
     LEFT JOIN odts.order_dispatch od ON od.order_id  = o.order_id
-    LEFT JOIN odts.code_reference al ON al.code_type = 'loading_location' AND al.code = o.preferred_location_code
+    LEFT JOIN odts.warehouse_master wm_actual ON wm_actual.warehouse_code = o.preferred_location_code
     ${where}
     ORDER BY o.order_date DESC
   `;
@@ -313,14 +313,25 @@ router.get('/orders', ensureDealer, (req, res) => {
     const canViewAllOrders = role === 'ADMIN' || role === 'DISPATCHER' || role === 'OFFICE_EXECUTIVE';
     const isAdminOrOffice = role === 'ADMIN' || role === 'OFFICE_EXECUTIVE';
     const isDispatcher = role === 'DISPATCHER';
-    console.log(`[/orders] User: ${req.session.user.username}, Role: '${role}', isDispatcher: ${isDispatcher}, isAdmin: ${isAdmin}`);
-    if (!isAdmin && req.query.action === 'new') {
-      console.log('[/orders/new] Rendering new order form');
-      return res.render('orders/new', { user: req.session.user, editOrderId: null, editDealerId: null, returnUrl: '/orders' });
+
+    // Determine return URL based on role
+    let returnUrl;
+    if (role === 'ADMIN') {
+      returnUrl = '/admin/dealer-orders';  // Admins go to admin dealer orders view
+    } else if (role === 'DISPATCHER' || role === 'OFFICE_EXECUTIVE') {
+      returnUrl = '/orders';  // Dispatchers and office executives go to orders view
+    } else {
+      returnUrl = '/orders';  // Dealers go to their orders view (MY ORDERS)
     }
-    if (!isAdmin && req.query.action === 'edit' && req.query.id) {
+
+    console.log(`[/orders] User: ${req.session.user.username}, Role: '${role}', isDispatcher: ${isDispatcher}, isAdmin: ${isAdmin}`);
+    if (req.query.action === 'new') {
+      console.log('[/orders/new] Rendering new order form');
+      return res.render('orders/new', { user: req.session.user, editOrderId: null, editDealerId: null, returnUrl });
+    }
+    if (req.query.action === 'edit' && req.query.id) {
       console.log('[/orders/edit] Rendering edit order form');
-      return res.render('orders/new', { user: req.session.user, editOrderId: req.query.id, editDealerId: null, returnUrl: '/orders' });
+      return res.render('orders/new', { user: req.session.user, editOrderId: req.query.id, editDealerId: null, returnUrl });
     }
     console.log(`[/orders-render] Passing to view: isDispatcher=${isDispatcher}, isAdmin=${isAdmin}, isAdminOrOffice=${isAdminOrOffice}, canViewAllOrders=${canViewAllOrders}`);
     res.render('orders/index', { user: req.session.user, isAdmin, canViewAllOrders, isAdminOrOffice, isDispatcher });
@@ -638,17 +649,17 @@ router.get('/api/dealer/orders/:id', ensureDealer, async (req, res) => {
              d.dealer_name,
              dp.party_company_name, dp.party_name AS party_name_col, dp.party_phone, dp.party_address,
              lt.code_desc AS load_type_desc,
-             pl.code_desc AS preferred_location_desc,
-             al.code_desc AS actual_loading_location_desc,
+             wm.warehouse_name AS preferred_location_desc,
+             wm_actual.warehouse_name AS actual_loading_location_desc,
              od.dispatch_id,
              ${ITEMS_SUBQUERY}
       FROM odts.dealer_orders o
       LEFT JOIN odts.dealer_master       d  ON d.dealer_id  = o.dealer_id
       LEFT JOIN odts.dealer_party_master  dp ON dp.party_id  = o.party_id
       LEFT JOIN odts.code_reference lt ON lt.code_type = 'loading_type'     AND lt.code = o.load_type_code
-      LEFT JOIN odts.code_reference pl ON pl.code_type = 'loading_location' AND pl.code = o.preferred_location_code
+      LEFT JOIN odts.warehouse_master wm ON wm.warehouse_code = o.preferred_location_code
       LEFT JOIN odts.order_dispatch od ON od.order_id  = o.order_id
-      LEFT JOIN odts.code_reference al ON al.code_type = 'loading_location' AND al.code = o.preferred_location_code
+      LEFT JOIN odts.warehouse_master wm_actual ON wm_actual.warehouse_code = o.preferred_location_code
       WHERE o.order_id = $1
     `, [parseInt(req.params.id)]);
     if (!result.rows.length) return res.status(404).json({ error: 'Order not found' });
@@ -707,11 +718,27 @@ router.post('/api/dealer/parties', ensureDealer, async (req, res) => {
 
 router.get('/api/codes/:type', ensureDealer, async (req, res) => {
   try {
+    const type = req.params.type;
+
+    // Special handling for loading_location: fetch from warehouse_master
+    if (type === 'loading_location') {
+      const result = await pool.query(
+        `SELECT
+          warehouse_code AS code,
+          warehouse_ui_label AS code_label,
+          warehouse_name AS code_desc
+        FROM odts.warehouse_master
+        ORDER BY COALESCE(warehouse_ui_order, 999), warehouse_id`
+      );
+      return res.json(result.rows);
+    }
+
+    // For all other types, fetch from code_reference
     const result = await pool.query(
       `SELECT code, code_label, code_desc FROM odts.code_reference
         WHERE code_type = $1
         ORDER BY code_sort_order`,
-      [req.params.type]
+      [type]
     );
     res.json(result.rows);
   } catch (e) {
@@ -973,6 +1000,88 @@ router.post('/api/dealer/orders', ensureDealer, async (req, res) => {
   }
 });
 
+// POST /api/admin/orders — Admin placing order on behalf of dealer
+router.post('/api/admin/orders', ensureAdmin, async (req, res) => {
+  const { dealer_id, items, party_id, load_type_code, preferred_location_code,
+          driver_name, driver_phone, vehicle_number } = req.body;
+
+  if (!dealer_id) {
+    return res.status(400).json({ error: 'Dealer ID is required' });
+  }
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'At least one product item is required' });
+  }
+  const KG_PER_BAG = 50;
+
+  for (const [idx, item] of items.entries()) {
+    if (!item.product_id) {
+      return res.status(400).json({ error: `Row ${idx + 1}: product is required` });
+    }
+    if (!item.order_bags || parseInt(item.order_bags, 10) < 1) {
+      return res.status(400).json({ error: `Row ${idx + 1}: number of bags is required` });
+    }
+    item.order_quantity = parseFloat((parseInt(item.order_bags, 10) * KG_PER_BAG / 1000).toFixed(3));
+  }
+
+  const userId       = req.session.user.id;
+  const totalQty     = items.reduce((sum, i) => sum + i.order_quantity, 0);
+  const firstProduct = parseInt(items[0].product_id, 10);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const orderResult = await client.query(`
+      INSERT INTO odts.dealer_orders
+        (dealer_id, product_id, order_quantity, party_id, load_type_code, preferred_location_code,
+         driver_name, driver_phone, vehicle_number,
+         order_status, order_date, created_by, created_at, updated_by, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ORDER_PLACED', NOW(), $10, NOW(), $10, NOW())
+      RETURNING *
+    `, [
+      parseInt(dealer_id, 10),
+      firstProduct,
+      Math.max(1, Math.ceil(totalQty)),
+      party_id  ? parseInt(party_id, 10)   : null,
+      load_type_code          || null,
+      preferred_location_code || null,
+      driver_name    ? driver_name.trim()    : null,
+      driver_phone   ? driver_phone.trim()   : null,
+      vehicle_number ? vehicle_number.trim() : null,
+      userId,
+    ]);
+
+    const orderId = orderResult.rows[0].order_id;
+
+    for (const item of items) {
+      await client.query(`
+        INSERT INTO odts.dealer_order_items (order_id, product_id, order_bags, order_quantity)
+        VALUES ($1, $2, $3, $4)
+      `, [
+        orderId,
+        parseInt(item.product_id, 10),
+        item.order_bags ? parseInt(item.order_bags, 10) : null,
+        parseFloat(item.order_quantity),
+      ]);
+    }
+
+    await client.query('COMMIT');
+
+    res.status(201).json({
+      order_id:     orderId,
+      order_status: 'ORDER_PLACED',
+      order_date:   orderResult.rows[0].order_date
+    });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('Admin order creation error:', e.message, e.stack);
+    res.status(500).json({ error: e.message || 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
 // PUT /api/dealer/orders/:id — edit order details (only for ORDER_PLACED status)
 router.put('/api/dealer/orders/:id', ensureDealer, async (req, res) => {
   const { items, party_id, load_type_code, preferred_location_code, driver_name, driver_phone, vehicle_number } = req.body;
@@ -1104,10 +1213,17 @@ router.put('/api/dealer/orders/:id', ensureDealer, async (req, res) => {
   }
 });
 
-router.patch('/api/dealer/orders/:id/status', ensureDealer, async (req, res) => {
+router.patch('/api/dealer/orders/:id/status', async (req, res) => {
+  // Allow dealers, admins, office executives, and dispatchers
+  if (!req.session || !req.session.user) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const role = req.session.user.role;
+  if (!['DEALER', 'ADMIN', 'DISPATCHER', 'OFFICE_EXECUTIVE'].includes(role)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
   try {
     const { status, reason } = req.body;
-    const role = req.session.user.role;
 
     const existing = await pool.query('SELECT * FROM odts.dealer_orders WHERE order_id = $1', [parseInt(req.params.id)]);
     if (!existing.rows.length) return res.status(404).json({ error: 'Order not found' });

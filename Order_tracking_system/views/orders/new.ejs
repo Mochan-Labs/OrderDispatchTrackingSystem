@@ -59,6 +59,14 @@
             </div>
           </div>
 
+          <!-- ── Dealer Selection (Admin Only) ────────────────────────── -->
+          <div class="col-12" id="dealer-section" style="display: none;">
+            <label for="admin_dealer_select" class="form-label fw-semibold">Select Dealer <span class="text-danger">*</span></label>
+            <select id="admin_dealer_select" class="form-select">
+              <option value="">Loading dealers…</option>
+            </select>
+          </div>
+
           <!-- ── Party Section ─────────────────────────────────────── -->
           <div class="col-12">
             <div class="d-flex align-items-center justify-content-between mb-2">
@@ -352,14 +360,100 @@
 
   document.getElementById('load_type_code').addEventListener('change', updateLoadTypeValidation);
 
+  // ── Dealer Selection (Admin Only) ──────────────────────────────────────────
+  let currentAdminDealerId = null;
+  let dealersData = [];
+
+  (async () => {
+    // Check if user is admin by making an API call or checking if dealer_id is null
+    // If this is an admin placing a new order (not editing), load dealers
+    if (isEditMode && editDealerId) {
+      // Editing an existing order - dealer is already set
+      currentAdminDealerId = editDealerId;
+    } else if (!editDealerId) {
+      // New order - check if we need to show dealer selector
+      try {
+        const meRes = await fetch('/api/me');
+        const me = await meRes.json();
+        if (me && !me.dealer_id && (me.role === 'ADMIN' || me.role === 'OFFICE_EXECUTIVE')) {
+          // This is an admin/office executive without a dealer_id - show dealer selector
+          const dealerSection = document.getElementById('dealer-section');
+          dealerSection.style.display = 'block';
+
+          const dealerSelect = document.getElementById('admin_dealer_select');
+          try {
+            const dealersRes = await fetch('/api/dealers');
+            dealersData = await dealersRes.json();
+            dealerSelect.innerHTML = '<option value="">Select Dealer</option>';
+            dealersData.forEach(d => {
+              const opt = document.createElement('option');
+              opt.value = d.dealer_id;
+              opt.textContent = d.dealer_name;
+              dealerSelect.appendChild(opt);
+            });
+
+            // When dealer is selected, reload parties
+            dealerSelect.addEventListener('change', function() {
+              currentAdminDealerId = this.value;
+              loadPartiesForDealer(this.value);
+            });
+          } catch (e) {
+            dealerSelect.innerHTML = '<option value="">Failed to load dealers</option>';
+          }
+        }
+      } catch (e) {
+        console.error('Failed to check user role:', e);
+      }
+    }
+  })();
+
+  function loadPartiesForDealer(dealerId) {
+    const sel = document.getElementById('party_select');
+    if (!dealerId) {
+      sel.innerHTML = '<option value="">Select Dealer First</option>';
+      return;
+    }
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/admin/parties/${dealerId}`);
+        partiesData = await res.json();
+        sel.innerHTML = '<option value="">Select Party</option>';
+        if (partiesData.length === 0) {
+          sel.innerHTML = '<option value="">No parties found — add a new one</option>';
+        } else {
+          partiesData.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.party_id;
+            opt.textContent = p.party_company_name;
+            sel.appendChild(opt);
+          });
+        }
+      } catch (e) {
+        sel.innerHTML = '<option value="">Failed to load parties</option>';
+      }
+    })();
+  }
+
   // ── Party logic ──────────────────────────────────────────────────────────
   let partiesData = [];
 
   (async () => {
     const sel = document.getElementById('party_select');
     try {
-      // If editing a dealer's order and dealerId is known, load parties for that dealer
-      const url = editDealerId ? `/api/admin/parties/${editDealerId}` : '/api/dealer/parties';
+      // Determine which endpoint to use for loading parties
+      let url;
+      if (editDealerId) {
+        // Editing an order - use the edit dealer ID
+        url = `/api/admin/parties/${editDealerId}`;
+      } else if (currentAdminDealerId) {
+        // Admin placing new order - use selected dealer
+        url = `/api/admin/parties/${currentAdminDealerId}`;
+      } else {
+        // Dealer placing order - use their own dealer
+        url = '/api/dealer/parties';
+      }
+
       const res = await fetch(url);
       partiesData = await res.json();
       sel.innerHTML = '<option value="">Select Party</option>';
@@ -686,8 +780,21 @@
         vehicle_number:          document.getElementById('vehicle_number').value.trim()  || null,
       };
 
-      const url = editingOrderId ? `/api/dealer/orders/${editingOrderId}` : '/api/dealer/orders';
-      const method = editingOrderId ? 'PUT' : 'POST';
+      // For admin creating new order, include dealer_id and use /api/admin/orders
+      let url, method;
+      if (editingOrderId) {
+        url = `/api/dealer/orders/${editingOrderId}`;
+        method = 'PUT';
+      } else if (currentAdminDealerId) {
+        // Admin creating order - must provide dealer_id
+        payload.dealer_id = parseInt(currentAdminDealerId, 10);
+        url = '/api/admin/orders';
+        method = 'POST';
+      } else {
+        // Dealer creating order
+        url = '/api/dealer/orders';
+        method = 'POST';
+      }
 
       const response = await fetch(url, {
         method:  method,
