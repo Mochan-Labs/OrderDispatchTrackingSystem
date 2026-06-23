@@ -28,12 +28,17 @@ INSERT INTO odts.code_reference (code_type, code_label, code, code_desc, code_so
 VALUES
   ('system_config',     'Admin Phone Number',        'admin_phone',  '+917042656633', 1)
 --
+--for loading type
 --
-INSERT INTO odts.warehouse_master (warehouse_type, warehouse_ui_label, warehouse_code, warehouse_name, warehouse_ui_order)
+INSERT INTO odts.code_reference (code_type, code_label, code, code_desc, code_sort_order)
 VALUES
   ('loading_type',     NULL,        'SLF_DOT',  'Self DOT (Dealer own truck)',  1 ),
   ('loading_type',     NULL,        'CMP_TRN',  'Company Transport',            2 ),
-  ('loading_location', 'RAKE',      'RAK_CHA',  'Rake (Chaukhadi)',             1 ),
+ 
+--
+INSERT INTO odts.warehouse_master (warehouse_type, warehouse_ui_label, warehouse_code, warehouse_name, warehouse_ui_order)
+VALUES
+   ('loading_location', 'RAKE',      'RAK_CHA',  'Rake (Chaukhadi)',            1 ),
   ('loading_location', 'RAKE',      'RAK_SHI',  'Rake (Shivpur)',               2 ),
   ('loading_location', 'WAREHOUSE', 'WH_TAR',   'Warehouse (Tarna)',            3 ),
   ('loading_location', 'WAREHOUSE', 'WH_GOE',   'Warehouse (Goenka)',           4 ),
