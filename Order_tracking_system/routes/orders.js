@@ -50,17 +50,17 @@ const VALID_TRANSITIONS = {
 // Dispatcher can cancel orders from any status at any time
 const DISPATCHER_ONLY_TRANSITIONS = ['CANCELLED'];
 
-// Correlated subquery — fetches all items for an order as a JSON array
+// Aggregate items from dealer_order_items table
 const ITEMS_SUBQUERY = `
-  (SELECT COALESCE(json_agg(json_build_object(
-      'product_id',    oi.product_id,
-      'product_name',  p.product_name,
-      'order_bags',    oi.order_bags,
-      'order_quantity', oi.order_quantity::text
-    ) ORDER BY oi.item_id), '[]'::json)
-   FROM odts.dealer_order_items oi
-   LEFT JOIN odts.product_master p ON p.product_id = oi.product_id
-   WHERE oi.order_id = o.order_id
+  (SELECT json_agg(json_build_object(
+      'product_id',    doi.product_id,
+      'product_name',  pm.product_name,
+      'order_bags',    doi.order_bags,
+      'order_quantity', doi.order_quantity::text
+    ) ORDER BY doi.product_id)
+   FROM odts.dealer_order_items doi
+   LEFT JOIN odts.product_master pm ON pm.product_id = doi.product_id
+   WHERE doi.order_id = o.order_id
   ) AS items
 `;
 
@@ -227,18 +227,18 @@ async function fetchOrders({ dealerId, startDate, endDate }) {
     SELECT o.*,
            d.dealer_name, d.dealer_company_name,
            dp.party_company_name, dp.party_name AS party_name_col, dp.party_phone, dp.party_address,
-           lt.warehouse_name  AS load_type_desc,
-           pl.warehouse_name  AS preferred_location_desc,
-           al.warehouse_name  AS actual_loading_location_desc,
+           lt.code_desc       AS load_type_desc,
+           pl.code_desc       AS preferred_location_desc,
+           al.code_desc       AS actual_loading_location_desc,
            od.dispatch_id,
            ${ITEMS_SUBQUERY}
     FROM odts.dealer_orders o
     LEFT JOIN odts.dealer_master       d  ON d.dealer_id  = o.dealer_id
-    LEFT JOIN odts.dealer_party_master  dp ON dp.party_id  = o.party_id
-    LEFT JOIN odts.warehouse_master lt ON lt.warehouse_type = 'loading_type'     AND lt.warehouse_code = o.load_type_code
-    LEFT JOIN odts.warehouse_master pl ON pl.warehouse_type = 'loading_location' AND pl.warehouse_code = o.preferred_location_code
+    LEFT JOIN odts.dealer_party  dp ON dp.party_id  = o.party_id
+    LEFT JOIN odts.code_reference lt ON lt.code_type = 'loading_type'     AND lt.code = o.load_type_code
+    LEFT JOIN odts.code_reference pl ON pl.code_type = 'loading_location' AND pl.code = o.preferred_location_code
     LEFT JOIN odts.order_dispatch od ON od.order_id  = o.order_id
-    LEFT JOIN odts.warehouse_master al ON al.warehouse_type = 'loading_location' AND al.warehouse_code = o.preferred_location_code
+    LEFT JOIN odts.code_reference al ON al.code_type = 'loading_location' AND al.code = o.preferred_location_code
     ${where}
     ORDER BY o.order_date DESC
   `;
@@ -307,20 +307,27 @@ router.get('/api/orders/events', ensureAnyUser, (req, res) => {
 // ── Page routes ────────────────────────────────────────────────────────────
 
 router.get('/orders', ensureDealer, (req, res) => {
-  const role = req.session.user.role;
-  const isAdmin = role === 'ADMIN' || role === 'DISPATCHER';
-  const canViewAllOrders = role === 'ADMIN' || role === 'DISPATCHER' || role === 'OFFICE_EXECUTIVE';
-  const isAdminOrOffice = role === 'ADMIN' || role === 'OFFICE_EXECUTIVE';
-  const isDispatcher = role === 'DISPATCHER';
-  console.log(`[/orders] User: ${req.session.user.username}, Role: '${role}', isDispatcher: ${isDispatcher}, isAdmin: ${isAdmin}`);
-  if (!isAdmin && req.query.action === 'new') {
-    return res.render('orders/new', { user: req.session.user, editOrderId: null });
+  try {
+    const role = req.session.user.role;
+    const isAdmin = role === 'ADMIN' || role === 'DISPATCHER';
+    const canViewAllOrders = role === 'ADMIN' || role === 'DISPATCHER' || role === 'OFFICE_EXECUTIVE';
+    const isAdminOrOffice = role === 'ADMIN' || role === 'OFFICE_EXECUTIVE';
+    const isDispatcher = role === 'DISPATCHER';
+    console.log(`[/orders] User: ${req.session.user.username}, Role: '${role}', isDispatcher: ${isDispatcher}, isAdmin: ${isAdmin}`);
+    if (!isAdmin && req.query.action === 'new') {
+      console.log('[/orders/new] Rendering new order form');
+      return res.render('orders/new', { user: req.session.user, editOrderId: null, editDealerId: null, returnUrl: '/orders' });
+    }
+    if (!isAdmin && req.query.action === 'edit' && req.query.id) {
+      console.log('[/orders/edit] Rendering edit order form');
+      return res.render('orders/new', { user: req.session.user, editOrderId: req.query.id, editDealerId: null, returnUrl: '/orders' });
+    }
+    console.log(`[/orders-render] Passing to view: isDispatcher=${isDispatcher}, isAdmin=${isAdmin}, isAdminOrOffice=${isAdminOrOffice}, canViewAllOrders=${canViewAllOrders}`);
+    res.render('orders/index', { user: req.session.user, isAdmin, canViewAllOrders, isAdminOrOffice, isDispatcher });
+  } catch (e) {
+    console.error('[/orders] RENDER ERROR:', e.message, e.stack);
+    res.status(500).send(`Error rendering orders page: ${e.message}`);
   }
-  if (!isAdmin && req.query.action === 'edit' && req.query.id) {
-    return res.render('orders/new', { user: req.session.user, editOrderId: req.query.id });
-  }
-  console.log(`[/orders-render] Passing to view: isDispatcher=${isDispatcher}, isAdmin=${isAdmin}, isAdminOrOffice=${isAdminOrOffice}, canViewAllOrders=${canViewAllOrders}`);
-  res.render('orders/index', { user: req.session.user, isAdmin, canViewAllOrders, isAdminOrOffice, isDispatcher });
 });
 
 // Admin: Dealer Orders (all dealers, T-2 days default)
@@ -630,18 +637,18 @@ router.get('/api/dealer/orders/:id', ensureDealer, async (req, res) => {
       SELECT o.*,
              d.dealer_name,
              dp.party_company_name, dp.party_name AS party_name_col, dp.party_phone, dp.party_address,
-             lt.warehouse_name AS load_type_desc,
-             pl.warehouse_name AS preferred_location_desc,
-             al.warehouse_name AS actual_loading_location_desc,
+             lt.code_desc AS load_type_desc,
+             pl.code_desc AS preferred_location_desc,
+             al.code_desc AS actual_loading_location_desc,
              od.dispatch_id,
              ${ITEMS_SUBQUERY}
       FROM odts.dealer_orders o
       LEFT JOIN odts.dealer_master       d  ON d.dealer_id  = o.dealer_id
-      LEFT JOIN odts.dealer_party_master  dp ON dp.party_id  = o.party_id
-      LEFT JOIN odts.warehouse_master lt ON lt.warehouse_type = 'loading_type'     AND lt.warehouse_code = o.load_type_code
-      LEFT JOIN odts.warehouse_master pl ON pl.warehouse_type = 'loading_location' AND pl.warehouse_code = o.preferred_location_code
+      LEFT JOIN odts.dealer_party  dp ON dp.party_id  = o.party_id
+      LEFT JOIN odts.code_reference lt ON lt.code_type = 'loading_type'     AND lt.code = o.load_type_code
+      LEFT JOIN odts.code_reference pl ON pl.code_type = 'loading_location' AND pl.code = o.preferred_location_code
       LEFT JOIN odts.order_dispatch od ON od.order_id  = o.order_id
-      LEFT JOIN odts.warehouse_master al ON al.warehouse_type = 'loading_location' AND al.warehouse_code = o.preferred_location_code
+      LEFT JOIN odts.code_reference al ON al.code_type = 'loading_location' AND al.code = o.preferred_location_code
       WHERE o.order_id = $1
     `, [parseInt(req.params.id)]);
     if (!result.rows.length) return res.status(404).json({ error: 'Order not found' });
@@ -659,7 +666,7 @@ router.get('/api/dealer/parties', ensureDealer, async (req, res) => {
     const result = await pool.query(
       `SELECT dp.party_id, dp.party_code, dp.party_company_name, dp.party_name,
               dp.party_address, dp.party_phone
-         FROM odts.dealer_party_master dp
+         FROM odts.dealer_party dp
         WHERE dp.dealer_id = $1
           AND COALESCE(dp.party_is_active_flag, TRUE) = TRUE
         ORDER BY dp.party_company_name`,
@@ -685,7 +692,7 @@ router.post('/api/dealer/parties', ensureDealer, async (req, res) => {
     if (!userId) return res.status(400).json({ error: 'User session invalid.' });
 
     const result = await pool.query(
-      `INSERT INTO odts.dealer_party_master
+      `INSERT INTO odts.dealer_party
          (dealer_id, party_code, party_company_name, party_phone, party_address, party_is_active_flag, created_by, created_at, updated_by, updated_at)
        VALUES ($1, $2, $3, $4, $5, TRUE, $6, NOW(), $6, NOW())
        RETURNING party_id, party_company_name, party_phone, party_address`,
@@ -701,9 +708,9 @@ router.post('/api/dealer/parties', ensureDealer, async (req, res) => {
 router.get('/api/codes/:type', ensureDealer, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT warehouse_code AS code, warehouse_ui_label AS code_label, warehouse_name AS code_desc FROM odts.warehouse_master
-        WHERE warehouse_type = $1
-        ORDER BY warehouse_ui_order`,
+      `SELECT code, code_label, code_desc FROM odts.code_reference
+        WHERE code_type = $1
+        ORDER BY code_sort_order`,
       [req.params.type]
     );
     res.json(result.rows);
@@ -734,7 +741,7 @@ router.get('/api/admin/parties/:dealer_id', ensureDealer, async (req, res) => {
     const dealerId = parseInt(req.params.dealer_id);
     const result = await pool.query(`
       SELECT party_id, party_code, party_company_name, party_name, party_phone, party_address, party_is_active_flag
-      FROM odts.dealer_party_master
+      FROM odts.dealer_party
       WHERE dealer_id = $1
       ORDER BY party_company_name
     `, [dealerId]);
@@ -959,8 +966,8 @@ router.post('/api/dealer/orders', ensureDealer, async (req, res) => {
     });
   } catch (e) {
     await client.query('ROLLBACK');
-    console.error(e);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Dealer order creation error:', e.message, e.stack);
+    res.status(500).json({ error: e.message || 'Server error' });
   } finally {
     client.release();
   }
