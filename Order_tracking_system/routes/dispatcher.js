@@ -108,7 +108,6 @@ router.get('/api/dispatcher/orders', ensureDispatcher, async (req, res) => {
       SELECT
         o.order_id,
         o.dealer_id,
-        o.order_quantity,
         o.load_type_code,
         o.preferred_location_code,
         o.order_status,

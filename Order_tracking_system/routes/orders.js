@@ -1406,16 +1406,17 @@ router.get('/api/admin/reports/monthly', ensureAdmin, async (req, res) => {
         COALESCE(SUM(CASE
           WHEN DATE_TRUNC('month', o.order_date) = make_date($1, $2, 1)
             AND o.order_status != 'ON_HOLD'
-          THEN o.order_quantity ELSE 0
+          THEN oi.order_quantity ELSE 0
         END), 0)::integer AS current_month_total,
         COALESCE(SUM(CASE
           WHEN DATE_TRUNC('month', o.order_date) = make_date($1, $2, 1) - INTERVAL '1 month'
             AND o.order_status != 'ON_HOLD'
-          THEN o.order_quantity ELSE 0
+          THEN oi.order_quantity ELSE 0
         END), 0)::integer AS last_month_total
       FROM odts.dealer_master d
       LEFT JOIN odts.user_master u ON u.dealer_id = d.dealer_id AND u.user_role_id = 2
       LEFT JOIN odts.dealer_orders o ON o.dealer_id = d.dealer_id
+      LEFT JOIN odts.dealer_order_items oi ON oi.order_id = o.order_id
       GROUP BY d.dealer_id, d.dealer_name, u.user_login_name, d.dealer_monthly_target, d.dealer_daily_limit
       ORDER BY d.dealer_name
     `;
