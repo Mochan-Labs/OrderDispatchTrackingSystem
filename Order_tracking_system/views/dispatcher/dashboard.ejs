@@ -154,6 +154,34 @@ async function handleDownloadReceipt(imageUrl, orderId) {
   }
 }
 
+// Reusable in-app receipt image lightbox
+function ReceiptPreviewModal({ url, onClose }) {
+  if (!url) return null;
+  return (
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.75)', zIndex: 2000 }} onClick={onClose}>
+      <div className="modal-dialog modal-dialog-centered modal-lg" onClick={e => e.stopPropagation()}>
+        <div className="modal-content">
+          <div className="modal-header" style={{ background: '#0d6efd', color: '#fff' }}>
+            <h5 className="modal-title mb-0">🧾 Dispatch Receipt</h5>
+            <button type="button" className="btn-close btn-close-white" onClick={onClose}></button>
+          </div>
+          <div className="modal-body text-center" style={{ background: '#f8f9fa' }}>
+            <img
+              src={url}
+              alt="Dispatch receipt"
+              style={{ maxWidth: '100%', maxHeight: '70vh', borderRadius: '8px', border: '1px solid #dee2e6' }}
+            />
+          </div>
+          <div className="modal-footer">
+            <a href={url} target="_blank" rel="noopener noreferrer" className="btn btn-outline-primary btn-sm">↗ Open in new tab</a>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onRefresh }) {
   // isExistingDispatch: order is already in dispatch state (only edit quantities)
   // Includes: DISPATCHED, PARTIALLY_DISPATCHED, DISPATCH_ON_HOLD
@@ -216,6 +244,7 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
     dispatch_notes: ''
   });
   const [creatingItem, setCreatingItem] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState(null);
 
   const galleryInputRef = useRef(null);
   const cameraInputRef = useRef(null);
@@ -238,6 +267,15 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
         });
     }
   }, [order.order_id, isExistingDispatch]);
+
+  // Auto-select warehouse when only one is available (e.g. dispatchers assigned to a single warehouse)
+  useEffect(() => {
+    if (loadingLocations.length === 1) {
+      const onlyId = String(loadingLocations[0].warehouse_id);
+      setForm(f => f.actual_loading_location_code ? f : { ...f, actual_loading_location_code: onlyId });
+      setDispatchItemForm(f => f.actual_loading_location_code ? f : { ...f, actual_loading_location_code: onlyId });
+    }
+  }, [loadingLocations]);
 
   // Fetch warehouse stock when product is selected
   useEffect(() => {
@@ -334,6 +372,12 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
 
     setCreatingItem(true);
     try {
+      // Ensure the selected receipt is uploaded before saving the dispatch item
+      let meta = imageMetadata;
+      if (selectedFile && !meta) {
+        meta = await uploadReceipt(selectedFile);
+      }
+
       const response = await fetch(`/api/orders/${order.order_id}/dispatch-items`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -346,7 +390,10 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
           dispatch_driver_phone: dispatchItemForm.dispatch_driver_phone,
           dispatch_bilty_number: dispatchItemForm.dispatch_bilty_number,
           dispatch_notes: dispatchItemForm.dispatch_notes,
-          dispatch_receipt_image_url: null,
+          dispatch_receipt_image_url: meta?.image_url || null,
+          dispatch_receipt_image_type: meta?.image_type || null,
+          dispatch_receipt_image_orig_size: meta?.image_original_size || null,
+          dispatch_receipt_image_comp_size: meta?.image_compressed_size || null,
           product_id: dispatchItemForm.product_id,
           dispatch_warehouse_id: dispatchItemForm.actual_loading_location_code
         })
@@ -374,6 +421,11 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
         dispatch_bilty_number: '',
         dispatch_notes: ''
       });
+      // Clear receipt selection for the next item
+      setSelectedFile(null);
+      setImagePreview(null);
+      setImageMetadata(null);
+      setUploadedImageUrl(null);
       notify('Dispatch item created successfully', 'success');
       setErr('');
     } catch (e) {
@@ -401,6 +453,8 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
     reader.readAsDataURL(file);
     setErr('');
     setSkipUploadConfirm(false);
+    // Upload immediately so the receipt URL is ready when the form is submitted
+    uploadReceipt(file);
   };
 
   const handleDeleteReceipt = () => {
@@ -436,18 +490,19 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
     }
   };
 
-  const uploadReceipt = async () => {
-    if (!selectedFile) return;
+  const uploadReceipt = async (fileArg) => {
+    const srcFile = fileArg || selectedFile;
+    if (!srcFile) return null;
 
     try {
       setUploading(true);
       setErr('');
 
-      let fileToUpload = selectedFile;
+      let fileToUpload = srcFile;
       let compressedSize = null;
 
       // Compress if file > 500KB
-      if (selectedFile.size > 500 * 1024 && typeof window.ImageCompression !== 'undefined') {
+      if (srcFile.size > 500 * 1024 && typeof window.ImageCompression !== 'undefined') {
         setUploadProgress(10);
         try {
           const options = {
@@ -455,7 +510,7 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
             maxWidthOrHeight: 1920,
             useWebWorker: true,
           };
-          fileToUpload = await window.ImageCompression.compress(selectedFile, options);
+          fileToUpload = await window.ImageCompression.compress(srcFile, options);
           compressedSize = fileToUpload.size;
           console.log(`Compressed image: ${selectedFile.size} → ${fileToUpload.size} bytes`);
         } catch (compressError) {
@@ -529,12 +584,16 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
         setUploadProgress(80);
         setUploadProgress(95);
         setUploadedImageUrl(s3Url);
-        setImageMetadata({
+        const localMeta = {
           image_url: s3Url,
           image_type: fileToUpload.type,
-          image_original_size: selectedFile.size,
+          image_original_size: srcFile.size,
           image_compressed_size: compressedSize,
-        });
+        };
+        setImageMetadata(localMeta);
+        setUploadProgress(100);
+        setUploading(false);
+        return localMeta;
       } else {
         // S3 upload: PUT file directly to presigned URL
         console.log('Uploading file directly to S3...');
@@ -558,42 +617,49 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
         const fullS3Key = `receipts/${extractedS3Key}`;
         console.log('S3 key extracted:', fullS3Key);
 
-        // Generate presigned READ URL for preview display
-        console.log('Generating presigned read URL for preview...');
-        const readUrlRes = await fetch('/api/dispatcher/presigned-read-url', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ s3Key: fullS3Key })
-        });
-
-        if (!readUrlRes.ok) {
-          throw new Error('Failed to generate read presigned URL');
+        // Generate presigned READ URL for preview display.
+        // The local base64 preview (imagePreview) is the fallback so upload never
+        // fails just because preview generation does.
+        let previewUrl = null;
+        try {
+          const readUrlRes = await fetch('/api/dispatcher/presigned-read-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ s3Key: fullS3Key })
+          });
+          if (readUrlRes.ok) {
+            previewUrl = (await readUrlRes.json()).url;
+          }
+        } catch (previewErr) {
+          console.warn('Preview URL generation failed, using local preview:', previewErr.message);
         }
-
-        const readResult = await readUrlRes.json();
-        const previewUrl = readResult.url;
-        console.log('Presigned read URL generated for preview');
 
         setUploadProgress(80);
         setUploadProgress(95);
 
-        // Store metadata: save only S3 key (database), but display fresh presigned URL (preview)
+        // Store metadata: persist only the durable S3 key in the DB (presigned on read)
         setUploadedImageUrl(previewUrl);
-        setImageMetadata({
+        const s3Meta = {
           image_url: fullS3Key,
           image_type: fileToUpload.type,
-          image_original_size: selectedFile.size,
+          image_original_size: srcFile.size,
           image_compressed_size: compressedSize,
-        });
+        };
+        setImageMetadata(s3Meta);
+        setUploadProgress(100);
+        setUploading(false);
+        return s3Meta;
       }
 
       setUploadProgress(100);
       setUploading(false);
+      return null;
     } catch (error) {
       console.error('Upload error:', error);
       setErr(`Upload failed: ${error.message}`);
       setUploading(false);
       setUploadProgress(0);
+      return null;
     }
   };
 
@@ -618,8 +684,8 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
       if (!form.bilty_number.trim())                  return setErr('Bilty number is required');
       if (!form.actual_loading_location_code)         return setErr('Actual loading location is required');
 
-      // Check if image is selected but not uploaded
-      if (selectedFile && !uploadedImageUrl && !skipUploadConfirm) {
+      // Check if image is selected but not yet uploaded (imageMetadata is the upload signal)
+      if (selectedFile && !imageMetadata && !skipUploadConfirm) {
         setSkipUploadConfirm(true);
         return;
       }
@@ -847,6 +913,7 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
                           <th style={{ width: '110px' }}>Vehicle</th>
                           <th style={{ width: '85px' }}>Bilty</th>
                           <th style={{ width: '110px' }}>Date</th>
+                          <th style={{ width: '80px' }}>Receipt</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -858,6 +925,19 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
                             <td className="small">{item.dispatch_vehicle_number || '—'}</td>
                             <td className="small" title={item.dispatch_bilty_number}>{item.dispatch_bilty_number ? item.dispatch_bilty_number.substring(0, 10) : '—'}</td>
                             <td className="small">{item.created_at ? fmt(item.created_at) : '—'}</td>
+                            <td className="small">
+                              {item.dispatch_receipt_image_url ? (
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-outline-primary py-0 px-1"
+                                  style={{ fontSize: '.7rem' }}
+                                  onClick={() => setPreviewUrl(item.dispatch_receipt_image_url)}
+                                  title="View receipt"
+                                >
+                                  🧾 View
+                                </button>
+                              ) : '—'}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -883,8 +963,9 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
                           value={dispatchItemForm.actual_loading_location_code || ''}
                           onChange={(e) => setDispatchItemForm({...dispatchItemForm, actual_loading_location_code: e.target.value})}
                           required
+                          disabled={loadingLocations.length === 1}
                         >
-                          <option value="">-- Select Warehouse --</option>
+                          {loadingLocations.length !== 1 && <option value="">-- Select Warehouse --</option>}
                           {loadingLocations.map(w => (
                             <option key={w.warehouse_id} value={w.warehouse_id}>
                               {w.warehouse_name}
@@ -1114,8 +1195,9 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
                       className="form-select"
                       value={form.actual_loading_location_code}
                       onChange={e => set('actual_loading_location_code', e.target.value)}
+                      disabled={loadingLocations.length === 1}
                     >
-                      <option value="">-- Select Warehouse --</option>
+                      {loadingLocations.length !== 1 && <option value="">-- Select Warehouse --</option>}
                       {loadingLocations.map(w => (
                         <option key={w.warehouse_id} value={w.warehouse_id}>
                           {w.warehouse_name}
@@ -1156,6 +1238,7 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
           onChange={handleFileSelect}
         />
       </div>
+      <ReceiptPreviewModal url={previewUrl} onClose={() => setPreviewUrl(null)} />
     </div>
   );
 }
@@ -1187,6 +1270,20 @@ function QtyCell({ order }) {
 }
 
 function ViewOrderModal({ order, onClose, onBack }) {
+  const [dispatchItems, setDispatchItems] = useState([]);
+  const [loadingDispatchItems, setLoadingDispatchItems] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState(null);
+
+  useEffect(() => {
+    if (!order || !order.dispatch_id) { setDispatchItems([]); return; }
+    setLoadingDispatchItems(true);
+    fetch(`/api/orders/${order.order_id}/dispatch-items`, { credentials: 'include' })
+      .then(r => r.json())
+      .then(data => setDispatchItems(Array.isArray(data) ? data.filter(i => i.dispatch_bags) : []))
+      .catch(() => setDispatchItems([]))
+      .finally(() => setLoadingDispatchItems(false));
+  }, [order && order.order_id, order && order.dispatch_id]);
+
   if (!order) return null;
   return (
     <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.5)' }}>
@@ -1315,40 +1412,57 @@ function ViewOrderModal({ order, onClose, onBack }) {
             {order.dispatch_id && (
               <>
                 <h6 className="fw-bold text-muted mb-3 text-uppercase small">Dispatch Information</h6>
-                <div className="row g-3 mb-4">
-                  <div className="col-md-4">
-                    <div className="p-3 bg-light rounded">
-                      <div className="text-muted small">Vehicle No.</div>
-                      <div className="fw-semibold">{order.dispatch_vehicle_number || '—'}</div>
-                    </div>
-                  </div>
-                  <div className="col-md-4">
-                    <div className="p-3 bg-light rounded">
-                      <div className="text-muted small">Driver Name</div>
-                      <div className="fw-semibold">{order.dispatch_driver_name || '—'}</div>
-                    </div>
-                  </div>
-                  <div className="col-md-4">
-                    <div className="p-3 bg-light rounded">
-                      <div className="text-muted small">Driver Phone</div>
-                      <div className="fw-semibold">
-                        {order.dispatch_driver_phone
-                          ? <a href={`tel:${order.dispatch_driver_phone}`}>{order.dispatch_driver_phone}</a>
-                          : '—'}
+
+                {/* Dispatched orders grid (per shipment) */}
+                <div className="mb-4 p-3 border rounded" style={{ background: '#f5f9ff', borderColor: '#b0d4f1' }}>
+                  <div className="text-muted small mb-3 fw-semibold">🚛 Dispatched orders ({dispatchItems.length})</div>
+                  <div style={{ maxHeight: '250px', overflowY: 'auto', borderRadius: '4px', border: '1px solid #dee2e6' }}>
+                    {loadingDispatchItems ? (
+                      <div className="text-center text-muted py-3">
+                        <span className="spinner-border spinner-border-sm me-2"></span>Loading...
                       </div>
-                    </div>
-                  </div>
-                  <div className="col-md-6">
-                    <div className="p-3 bg-light rounded">
-                      <div className="text-muted small">Bilty Number</div>
-                      <div className="fw-semibold">{order.bilty_number || '—'}</div>
-                    </div>
-                  </div>
-                  <div className="col-md-6">
-                    <div className="p-3 bg-light rounded">
-                      <div className="text-muted small">Dispatch Date</div>
-                      <div className="fw-semibold">{fmt(order.dispatch_created_at) || '—'}</div>
-                    </div>
+                    ) : dispatchItems.length === 0 ? (
+                      <div className="text-center text-muted py-3 small">No dispatched items.</div>
+                    ) : (
+                      <table className="table table-sm mb-0">
+                        <thead className="table-light" style={{ position: 'sticky', top: 0 }}>
+                          <tr>
+                            <th style={{ width: '70px' }}>Bags</th>
+                            <th style={{ width: '90px' }}>Qty (MT)</th>
+                            <th style={{ width: '120px' }}>Driver</th>
+                            <th style={{ width: '110px' }}>Vehicle</th>
+                            <th style={{ width: '85px' }}>Bilty</th>
+                            <th style={{ width: '110px' }}>Date</th>
+                            <th style={{ width: '80px' }}>Receipt</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {dispatchItems.map((item, idx) => (
+                            <tr key={idx}>
+                              <td className="small">{item.dispatch_bags}</td>
+                              <td className="small">{item.dispatch_quantity ? parseFloat(item.dispatch_quantity).toFixed(3) : '—'}</td>
+                              <td className="small" title={item.dispatch_driver_name}>{item.dispatch_driver_name ? item.dispatch_driver_name.substring(0, 12) : '—'}</td>
+                              <td className="small">{item.dispatch_vehicle_number || '—'}</td>
+                              <td className="small" title={item.dispatch_bilty_number}>{item.dispatch_bilty_number ? item.dispatch_bilty_number.substring(0, 10) : '—'}</td>
+                              <td className="small">{item.created_at ? fmt(item.created_at) : '—'}</td>
+                              <td className="small">
+                                {item.dispatch_receipt_image_url ? (
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-outline-primary py-0 px-1"
+                                    style={{ fontSize: '.7rem' }}
+                                    onClick={() => setPreviewUrl(item.dispatch_receipt_image_url)}
+                                    title="View receipt"
+                                  >
+                                    🧾 View
+                                  </button>
+                                ) : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
                   </div>
                 </div>
               </>
@@ -1390,6 +1504,7 @@ function ViewOrderModal({ order, onClose, onBack }) {
           </div>
         </div>
       </div>
+      <ReceiptPreviewModal url={previewUrl} onClose={() => setPreviewUrl(null)} />
     </div>
   );
 }

@@ -78,6 +78,50 @@ async function addPresignedUrlsToDispatcherOrders(orders) {
   return orders;
 }
 
+// Resolve a stored receipt reference to a viewable URL.
+// Handles: already-presigned URLs, external http(s) URLs, local /uploads paths,
+// full S3 URLs (https://bucket/.../receipts/...), and bare S3 keys (receipts/...).
+async function resolveReceiptUrl(url) {
+  if (!url) return url;
+  // Already a presigned URL (has query string) — use as-is
+  if (url.includes('?')) return url;
+  // Local static file — served directly
+  if (url.startsWith('/uploads/')) return url;
+
+  // Derive the S3 key
+  let s3Key = null;
+  const idx = url.indexOf('/receipts/');
+  if (idx !== -1) {
+    s3Key = url.substring(idx + 1); // strip leading slash (and any domain)
+  } else if (url.startsWith('receipts/')) {
+    s3Key = url;
+  } else if (url.startsWith('http')) {
+    // External URL with no /receipts/ segment (e.g. a test image) — use as-is
+    return url;
+  } else {
+    return url;
+  }
+
+  try {
+    return await generatePresignedReadUrl(s3Key);
+  } catch (err) {
+    console.error(`[Dispatcher] Failed to presign receipt ${s3Key}:`, err.message);
+    return url;
+  }
+}
+
+// Generate presigned read URLs for dispatch item receipt images
+async function addPresignedUrlsToDispatchItems(items) {
+  try {
+    for (const item of items) {
+      item.dispatch_receipt_image_url = await resolveReceiptUrl(item.dispatch_receipt_image_url);
+    }
+  } catch (err) {
+    console.error('[Dispatcher] Error presigning dispatch item receipts:', err.message);
+  }
+  return items;
+}
+
 // Page route
 router.get('/dispatcher', ensureDispatcher, (req, res) => {
   res.render('dispatcher/dashboard', { user: req.session.user });
@@ -296,8 +340,8 @@ router.post('/api/dispatcher/presigned-read-url', ensureDispatcher, async (req, 
       return res.status(400).json({ error: 's3Key is required' });
     }
 
-    // Check if we're in S3 mode
-    if (process.env.STORAGE_MODE !== 'aws') {
+    // Only local mode has no presigned reads; default (unset) uses S3
+    if (process.env.STORAGE_MODE === 'local') {
       return res.status(400).json({ error: 'Read presigned URLs only for S3 mode' });
     }
 
@@ -642,6 +686,7 @@ router.get('/api/orders/:orderId/dispatch-items', ensureAuth, async (req, res) =
        ORDER BY created_at DESC`,
       [orderId]
     );
+    await addPresignedUrlsToDispatchItems(result.rows);
     res.json(result.rows);
   } catch (e) {
     console.error('Error fetching dispatch items:', e);

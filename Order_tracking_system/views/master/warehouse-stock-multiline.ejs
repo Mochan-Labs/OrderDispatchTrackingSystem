@@ -27,11 +27,36 @@ function Toast({ msg, type, onClose }) {
   );
 }
 
+// Reusable in-app receipt image lightbox
+function ReceiptPreviewModal({ url, onClose }) {
+  if (!url) return null;
+  return (
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.75)', zIndex: 2000 }} onClick={onClose}>
+      <div className="modal-dialog modal-dialog-centered modal-lg" onClick={e => e.stopPropagation()}>
+        <div className="modal-content">
+          <div className="modal-header" style={{ background: '#0d6efd', color: '#fff' }}>
+            <h5 className="modal-title mb-0">🧾 Stock Receipt</h5>
+            <button type="button" className="btn-close btn-close-white" onClick={onClose}></button>
+          </div>
+          <div className="modal-body text-center" style={{ background: '#f8f9fa' }}>
+            <img src={url} alt="Stock receipt" style={{ maxWidth: '100%', maxHeight: '70vh', borderRadius: '8px', border: '1px solid #dee2e6' }} />
+          </div>
+          <div className="modal-footer">
+            <a href={url} target="_blank" rel="noopener noreferrer" className="btn btn-outline-primary btn-sm">↗ Open in new tab</a>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function WarehouseStockApp() {
   // Part 1: Current Inventory
   const [inventoryData, setInventoryData] = useState([]);
   const [warehousesInventory, setWarehousesInventory] = useState([]);
   const [loadingInventory, setLoadingInventory] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState(null);
 
   // Part 2: Stock Entries
   const [stockEntries, setStockEntries] = useState([]);
@@ -100,6 +125,14 @@ function WarehouseStockApp() {
       showToast('Failed to load warehouses: ' + e.message, 'danger');
     }
   };
+
+  // Auto-select warehouse in the add-stock form when only one is available (e.g. dispatchers/stock managers)
+  useEffect(() => {
+    if (warehousesInventory.length === 1) {
+      const onlyId = warehousesInventory[0].warehouse_id.toString();
+      setFormHeader(h => h.warehouse_id ? h : { ...h, warehouse_id: onlyId });
+    }
+  }, [warehousesInventory]);
 
   // Part 1: Fetch Inventory Summary
   const fetchInventory = async () => {
@@ -208,7 +241,7 @@ function WarehouseStockApp() {
 
       showToast('✅ Stock saved successfully');
       setFormHeader({
-        warehouse_id: '',
+        warehouse_id: warehousesInventory.length === 1 ? warehousesInventory[0].warehouse_id.toString() : '',
         warehouse_stock_date: getTodayDate(),
         warehouse_vehicle_number: '',
         warehouse_driver_name: '',
@@ -611,6 +644,7 @@ function WarehouseStockApp() {
                       <th>Product</th>
                       <th style={{width:'80px'}} className="text-center">Qty</th>
                       <th style={{width:'120px'}}>Date</th>
+                      <th style={{width:'80px'}}>Receipt</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -622,6 +656,12 @@ function WarehouseStockApp() {
                           <td className="small">{stock.warehouse_driver_name || '—'}</td>
                           <td colSpan="2" className="small text-muted">—</td>
                           <td className="small">{stock.warehouse_stock_date ? new Date(stock.warehouse_stock_date).toLocaleDateString() : '—'}</td>
+                          <td className="small">
+                            {stock.warehouse_receipt_image_url ? (
+                              <button type="button" className="btn btn-sm btn-outline-primary py-0 px-1" style={{ fontSize: '.7rem' }}
+                                onClick={() => setPreviewUrl(stock.warehouse_receipt_image_url)} title="View receipt">🧾 View</button>
+                            ) : '—'}
+                          </td>
                         </tr>
                       ) : (
                         stock.items.map((item, i) => (
@@ -632,6 +672,12 @@ function WarehouseStockApp() {
                             <td className="small">{item.product_name || '—'}</td>
                             <td className="text-center fw-semibold">{item.qty}</td>
                             <td className="small">{stock.warehouse_stock_date ? new Date(stock.warehouse_stock_date).toLocaleDateString() : '—'}</td>
+                            <td className="small">
+                              {i === 0 && stock.warehouse_receipt_image_url ? (
+                                <button type="button" className="btn btn-sm btn-outline-primary py-0 px-1" style={{ fontSize: '.7rem' }}
+                                  onClick={() => setPreviewUrl(stock.warehouse_receipt_image_url)} title="View receipt">🧾 View</button>
+                              ) : (i === 0 ? '—' : '')}
+                            </td>
                           </tr>
                         ))
                       )
@@ -669,8 +715,9 @@ function WarehouseStockApp() {
                           value={formHeader.warehouse_id}
                           onChange={(e) => setFormHeader({...formHeader, warehouse_id: e.target.value})}
                           required
+                          disabled={warehousesInventory.length === 1}
                         >
-                          <option value="">-- Select Warehouse --</option>
+                          {warehousesInventory.length !== 1 && <option value="">-- Select Warehouse --</option>}
                           {warehousesInventory.map(w => (
                             <option key={w.warehouse_id} value={w.warehouse_id}>{w.warehouse_name}</option>
                           ))}
@@ -831,6 +878,8 @@ function WarehouseStockApp() {
           </div>
         </div>
       )}
+
+      <ReceiptPreviewModal url={previewUrl} onClose={() => setPreviewUrl(null)} />
     </div>
   );
 }
