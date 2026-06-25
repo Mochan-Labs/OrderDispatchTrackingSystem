@@ -45,9 +45,9 @@ router.get('/master/dealers', ensureAuth, (req, res) => {
 
 router.get('/api/dealers', ensureAdminOrOffice, async (req, res) => {
   try {
-    const dealerCompanyCol = await getFirstExistingColumn('dealers', ['dealer_company_name', 'dealer_company']);
-    const hasDealerEmail = await hasColumn('dealers', 'dealer_email');
-    const hasLocationId = await hasColumn('dealers', 'location_id');
+    const dealerCompanyCol = await getFirstExistingColumn('dealer_master', ['dealer_company_name', 'dealer_company']);
+    const hasDealerEmail = await hasColumn('dealer_master', 'dealer_email');
+    const hasLocationId = await hasColumn('dealer_master', 'location_id');
     const r = await pool.query(
       `SELECT DISTINCT ON (d.dealer_id) d.dealer_id,
               COALESCE(u.user_login_name, '—') AS user_login_name,
@@ -92,9 +92,9 @@ router.post('/api/dealers', ensureAdmin, async (req, res) => {
   if (!dealer_name) return res.status(400).json({ error: 'Dealer name required' });
   try {
     const actorId = req.session?.user?.id || 0;
-    const dealerCompanyCol = await getFirstExistingColumn('dealers', ['dealer_company_name', 'dealer_company']);
-    const hasDealerEmail = await hasColumn('dealers', 'dealer_email');
-    const hasLocationId = await hasColumn('dealers', 'location_id');
+    const dealerCompanyCol = await getFirstExistingColumn('dealer_master', ['dealer_company_name', 'dealer_company']);
+    const hasDealerEmail = await hasColumn('dealer_master', 'dealer_email');
+    const hasLocationId = await hasColumn('dealer_master', 'location_id');
     const cols = ['dealer_name'];
     const values = [dealer_name.trim()];
     const placeholders = ['$1'];
@@ -138,9 +138,9 @@ router.put('/api/dealers/:id', ensureAdminOrOffice, async (req, res) => {
   if (!dealer_name) return res.status(400).json({ error: 'Dealer name required' });
   try {
     const actorId = req.session?.user?.id || 0;
-    const dealerCompanyCol = await getFirstExistingColumn('dealers', ['dealer_company_name', 'dealer_company']);
-    const hasDealerEmail = await hasColumn('dealers', 'dealer_email');
-    const hasLocationId = await hasColumn('dealers', 'location_id');
+    const dealerCompanyCol = await getFirstExistingColumn('dealer_master', ['dealer_company_name', 'dealer_company']);
+    const hasDealerEmail = await hasColumn('dealer_master', 'dealer_email');
+    const hasLocationId = await hasColumn('dealer_master', 'location_id');
     const setParts = ['dealer_name=$1'];
     const values = [dealer_name.trim()];
     let i = 2;

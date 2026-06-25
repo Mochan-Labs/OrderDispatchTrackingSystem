@@ -1869,8 +1869,8 @@ function App() {
                             </button>
                           )}
 
-                          {/* Admin/Office: Edit Dispatch on ACCEPTED or dispatch-related statuses */}
-                          {IS_ADMIN_OR_OFFICE && (o.order_status === 'ACCEPTED' || ['DISPATCHED', 'PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(o.order_status)) && (
+                          {/* Admin/Office/Dispatcher: Edit Dispatch only on DISPATCH_ON_HOLD or PARTIALLY_DISPATCHED */}
+                          {(IS_ADMIN_OR_OFFICE || IS_DISPATCHER) && ['DISPATCH_ON_HOLD', 'PARTIALLY_DISPATCHED'].includes(o.order_status) && (
                             <button className="btn btn-sm btn-warning me-1" onClick={() => setSelectedOrder(o)}>
                               ✏️ Edit Dispatch
                             </button>

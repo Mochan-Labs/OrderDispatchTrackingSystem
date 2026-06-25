@@ -1668,7 +1668,7 @@ function DealerDispatchedOrdersModal({ orders, dealerId, onClose, onBack, onView
                           👁️ View
                         </button>
                       )}
-                      {onDispatch && (
+                      {onDispatch && ['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD'].includes(order.order_status) && (
                         <button className="btn btn-sm btn-warning me-1" onClick={() => onDispatch(order)}>
                           ✏️ Edit Dispatch
                         </button>
@@ -1742,7 +1742,7 @@ function OrderRow({ order, onAccept, onDispatch, onView, isOrderOverdue }) {
             🚛 Dispatch
           </button>
         )}
-        {['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(order.order_status) && (
+        {['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD'].includes(order.order_status) && (
           <>
             <button className="btn btn-sm btn-warning me-1" onClick={() => onDispatch(order)}>
               ✏️ Edit Dispatch
@@ -2028,7 +2028,7 @@ function TotalDealerOrdersModal({ orders, dealerId, onClose, onBack, onView, onA
                           🚛 Dispatch
                         </button>
                       )}
-                      {['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(order.order_status) && (
+                      {['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD'].includes(order.order_status) && (
                         <button className="btn btn-sm btn-warning" onClick={() => onDispatch(order)}>
                           ✏️ Edit Dispatch
                         </button>
