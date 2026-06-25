@@ -811,13 +811,13 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
             {/* Dispatch Orders Grid - show at top for existing dispatch */}
             {isExistingDispatch && (
               <div className="mb-4 p-3 border rounded" style={{ background: '#f5f9ff', borderColor: '#b0d4f1' }}>
-                <div className="text-muted small mb-3 fw-semibold">🚛 Dispatched orders ({dispatchItems.length})</div>
+                <div className="text-muted small mb-3 fw-semibold">🚛 Dispatched orders ({dispatchItems.filter(i => i.dispatch_bags).length})</div>
                 <div style={{ maxHeight: '250px', overflowY: 'auto', borderRadius: '4px', border: '1px solid #dee2e6' }}>
                   {loadingItems ? (
                     <div className="text-center text-muted py-3">
                       <span className="spinner-border spinner-border-sm me-2"></span>Loading...
                     </div>
-                  ) : dispatchItems.length === 0 ? (
+                  ) : dispatchItems.filter(i => i.dispatch_bags).length === 0 ? (
                     <div className="text-center text-muted py-3 small">
                       No dispatch items yet. Add your first dispatch item below.
                     </div>
@@ -834,9 +834,9 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
                         </tr>
                       </thead>
                       <tbody>
-                        {dispatchItems.map((item, idx) => (
+                        {dispatchItems.filter(item => item.dispatch_bags).map((item, idx) => (
                           <tr key={idx}>
-                            <td className="small">{item.dispatch_bags || '—'}</td>
+                            <td className="small">{item.dispatch_bags}</td>
                             <td className="small">{item.dispatch_quantity ? parseFloat(item.dispatch_quantity).toFixed(3) : '—'}</td>
                             <td className="small" title={item.dispatch_driver_name}>{item.dispatch_driver_name ? item.dispatch_driver_name.substring(0, 12) : '—'}</td>
                             <td className="small">{item.dispatch_vehicle_number || '—'}</td>
@@ -996,6 +996,18 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
                           </button>
                         </div>
                         <small className="text-muted d-block mt-2">Auto-compressed to ~500 KB if larger</small>
+
+                        {/* Image Preview */}
+                        {imagePreview && (
+                          <div style={{ marginTop: '12px', padding: '8px', border: '1px solid #dee2e6', borderRadius: '4px', backgroundColor: '#f8f9fa' }}>
+                            <img
+                              src={imagePreview}
+                              alt="Preview"
+                              style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '4px' }}
+                            />
+                            <small className="text-muted d-block mt-2">✅ Image selected</small>
+                          </div>
+                        )}
                       </div>
                       <button
                         type="submit"
@@ -1103,6 +1115,23 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
           </div>
 
         </div>
+
+        {/* Hidden file inputs for image upload */}
+        <input
+          ref={galleryInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={handleFileSelect}
+        />
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          style={{ display: 'none' }}
+          onChange={handleFileSelect}
+        />
       </div>
     </div>
   );
