@@ -15,6 +15,7 @@
 
 <script type="text/babel">
 const { useState, useEffect } = React;
+const currentUser = <%- JSON.stringify(currentUser) %>;
 
 function Toast({ msg, type, onClose }) {
   if (!msg) return null;
@@ -50,16 +51,17 @@ function WarehouseStockApp() {
   };
 
   // Part 1 Filters
-  const [selectedWarehouse1, setSelectedWarehouse1] = useState('');
+  const [selectedWarehouse1, setSelectedWarehouse1] = useState(currentUser?.user_warehouse_id?.toString() || '');
   const [searchTerm1, setSearchTerm1] = useState('');
   const [startDate1, setStartDate1] = useState('');
   const [endDate1, setEndDate1] = useState('');
 
   // Part 2 Filters (Default: Last 2 days)
-  const [selectedWarehouse2, setSelectedWarehouse2] = useState('');
+  const [selectedWarehouse2, setSelectedWarehouse2] = useState(currentUser?.user_warehouse_id?.toString() || '');
   const [searchTerm2, setSearchTerm2] = useState('');
   const [startDate2, setStartDate2] = useState(getDefault2DaysAgo());
   const [endDate2, setEndDate2] = useState(getTodayDate());
+  const [selectedDateRange, setSelectedDateRange] = useState('last2days');
 
   // Enter Stock Modal State
   const [showModal, setShowModal] = useState(false);
@@ -347,8 +349,9 @@ function WarehouseStockApp() {
                   className="form-select form-select-sm"
                   value={selectedWarehouse1}
                   onChange={(e) => setSelectedWarehouse1(e.target.value)}
+                  disabled={currentUser?.role === 'DISPATCHER' && currentUser?.user_warehouse_id}
                 >
-                  <option value="">-- All Warehouses --</option>
+                  {currentUser?.role === 'ADMIN' && <option value="">-- All Warehouses --</option>}
                   {warehousesInventory.map(w => (
                     <option key={w.warehouse_id} value={w.warehouse_id}>{w.warehouse_name}</option>
                   ))}
@@ -448,8 +451,9 @@ function WarehouseStockApp() {
                   className="form-select form-select-sm"
                   value={selectedWarehouse2}
                   onChange={(e) => setSelectedWarehouse2(e.target.value)}
+                  disabled={currentUser?.role === 'DISPATCHER' && currentUser?.user_warehouse_id}
                 >
-                  <option value="">-- All Warehouses --</option>
+                  {currentUser?.role === 'ADMIN' && <option value="">-- All Warehouses --</option>}
                   {warehousesInventory.map(w => (
                     <option key={w.warehouse_id} value={w.warehouse_id}>{w.warehouse_name}</option>
                   ))}
@@ -471,7 +475,10 @@ function WarehouseStockApp() {
                   type="date"
                   className="form-control form-control-sm"
                   value={startDate2}
-                  onChange={(e) => setStartDate2(e.target.value)}
+                  onChange={(e) => {
+                    setStartDate2(e.target.value);
+                    setSelectedDateRange('custom');
+                  }}
                 />
               </div>
               <div className="col-md-2">
@@ -480,7 +487,10 @@ function WarehouseStockApp() {
                   type="date"
                   className="form-control form-control-sm"
                   value={endDate2}
-                  onChange={(e) => setEndDate2(e.target.value)}
+                  onChange={(e) => {
+                    setEndDate2(e.target.value);
+                    setSelectedDateRange('custom');
+                  }}
                 />
               </div>
               <div className="col-md-2 d-flex align-items-end">
@@ -497,7 +507,7 @@ function WarehouseStockApp() {
                 <div className="btn-group btn-group-sm w-100" role="group">
                   <button
                     type="button"
-                    className="btn btn-outline-primary active"
+                    className={`btn btn-outline-primary ${selectedDateRange === 'last2days' ? 'active' : ''}`}
                     onClick={() => {
                       const today = new Date();
                       const days2 = new Date(today.getTime() - 2 * 24 * 60 * 60 * 1000);
@@ -505,6 +515,7 @@ function WarehouseStockApp() {
                       const endDate = today.toISOString().split('T')[0];
                       setStartDate2(startDate);
                       setEndDate2(endDate);
+                      setSelectedDateRange('last2days');
                       fetchStockEntries(startDate, endDate);
                     }}
                   >
@@ -512,7 +523,7 @@ function WarehouseStockApp() {
                   </button>
                   <button
                     type="button"
-                    className="btn btn-outline-primary"
+                    className={`btn btn-outline-primary ${selectedDateRange === 'last7days' ? 'active' : ''}`}
                     onClick={() => {
                       const today = new Date();
                       const days7 = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -520,6 +531,7 @@ function WarehouseStockApp() {
                       const endDate = today.toISOString().split('T')[0];
                       setStartDate2(startDate);
                       setEndDate2(endDate);
+                      setSelectedDateRange('last7days');
                       fetchStockEntries(startDate, endDate);
                     }}
                   >
@@ -527,7 +539,7 @@ function WarehouseStockApp() {
                   </button>
                   <button
                     type="button"
-                    className="btn btn-outline-primary"
+                    className={`btn btn-outline-primary ${selectedDateRange === 'last14days' ? 'active' : ''}`}
                     onClick={() => {
                       const today = new Date();
                       const days14 = new Date(today.getTime() - 14 * 24 * 60 * 60 * 1000);
@@ -535,6 +547,7 @@ function WarehouseStockApp() {
                       const endDate = today.toISOString().split('T')[0];
                       setStartDate2(startDate);
                       setEndDate2(endDate);
+                      setSelectedDateRange('last14days');
                       fetchStockEntries(startDate, endDate);
                     }}
                   >
@@ -542,7 +555,7 @@ function WarehouseStockApp() {
                   </button>
                   <button
                     type="button"
-                    className="btn btn-outline-primary"
+                    className={`btn btn-outline-primary ${selectedDateRange === 'last30days' ? 'active' : ''}`}
                     onClick={() => {
                       const today = new Date();
                       const days30 = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -550,6 +563,7 @@ function WarehouseStockApp() {
                       const endDate = today.toISOString().split('T')[0];
                       setStartDate2(startDate);
                       setEndDate2(endDate);
+                      setSelectedDateRange('last30days');
                       fetchStockEntries(startDate, endDate);
                     }}
                   >
@@ -557,12 +571,13 @@ function WarehouseStockApp() {
                   </button>
                   <button
                     type="button"
-                    className="btn btn-outline-secondary"
+                    className={`btn btn-outline-secondary ${selectedDateRange === 'custom' ? 'active' : ''}`}
                     onClick={() => {
                       setStartDate2('');
                       setEndDate2('');
                       setSearchTerm2('');
-                      setSelectedWarehouse2('');
+                      setSelectedWarehouse2(currentUser?.user_warehouse_id?.toString() || '');
+                      setSelectedDateRange('custom');
                     }}
                   >
                     Clear All

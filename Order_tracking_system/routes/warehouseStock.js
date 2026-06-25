@@ -18,7 +18,12 @@ function ensureAdminOrStockManagerOrDispatcher(req, res, next) {
 
 // GET page - multiline entry view
 router.get('/admin/warehouse-stock', ensureAdminOrStockManagerOrDispatcher, (req, res) => {
-  res.render('master/warehouse-stock-multiline');
+  const currentUser = {
+    id: req.session.user.id,
+    role: req.session.user.role,
+    user_warehouse_id: req.session.user.user_warehouse_id || null
+  };
+  res.render('master/warehouse-stock-multiline', { currentUser });
 });
 
 // GET API: all warehouse stock with items and product details
