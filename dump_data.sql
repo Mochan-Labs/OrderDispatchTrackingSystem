@@ -130,7 +130,6 @@ Insert into odts.dealer_master (dealer_code, dealer_company_name, dealer_address
 Insert into odts.dealer_master (dealer_code, dealer_company_name, dealer_address, dealer_phone, dealer_name,  created_by, created_at, updated_by, updated_at) values ( '9110159541','SHREE BALAJI ENTERPRISES','CHANDAULI',9336182012,'NANDINI SINGH',0, CURRENT_TIMESTAMP,0, CURRENT_TIMESTAMP);
 --
 --
-
 INSERT INTO odts.dealer_party_master
 (party_code, dealer_id, party_name, party_company_name, party_phone, party_email, party_address, party_is_active_flag, created_at, created_by, updated_at, updated_by)
 VALUES
@@ -464,9 +463,8 @@ VALUES
 ('9110235624', (SELECT dealer_id FROM odts.dealer_master WHERE dealer_code = '9110235624' LIMIT 1), NULL, 'SINGH BROTHERS', '9838808962', NULL, 'CHITTUPUR, HINDU VISHWA VIDYALAYA', TRUE, NOW(), 0, NOW(), 0),
 ('9110236010', (SELECT dealer_id FROM odts.dealer_master WHERE dealer_code = '9110236010' LIMIT 1), NULL, 'KESHARWANI AGENCIES', '9415619899', NULL, 'A8 25 TELIYANALA PRAHALADGHAT', TRUE, NOW(), 0, NOW(), 0),
 ('9110237589', (SELECT dealer_id FROM odts.dealer_master WHERE dealer_code = '9110237589' LIMIT 1), NULL, 'PAWAN ENTERPRISES', '8090412525', NULL, 'B24 DAFI DWARIKA PURAM COLONY', TRUE, NOW(), 0, NOW(), 0);
-
 --
---
+--SYSTEM
 INSERT INTO odts.user_master (
 user_id,
 user_role_id,
@@ -479,7 +477,7 @@ user_email
 )
 values (0,0, null, 'system', 'system', public.crypt('system123', public.gen_salt('bf')), NULL, NULL);
 --
---
+--ADMIN
 INSERT INTO odts.user_master (
   user_login_name,
   user_name,
@@ -503,7 +501,8 @@ INSERT INTO odts.user_master (
   0,
   0);
 --
---
+-- its not required as user and password for dealers has been changed
+/*
 INSERT INTO odts.user_master (        
     user_role_id,       
     dealer_id,  
@@ -540,7 +539,7 @@ FROM (
 JOIN odts.user_roles_master ur         
     ON ur.role_name = 'DEALER';     
 —-
-
+*/
 
 INSERT INTO odts.user_master (user_login_name, user_name, user_email, user_phone, password_hash, user_role_id, user_is_active_flag, user_is_locked_flag, user_warehouse_id, created_by, created_at, updated_by, updated_at)
 VALUES ('chaukhadi', 'Warehouse (Chaukhadi)', 'chaukhadi@warehouse.local', '999999' || LPAD(((SELECT warehouse_id FROM odts.warehouse_master WHERE warehouse_name LIKE '%Chaukhadi%' LIMIT 1) + 1)::text, 4, '0'), '$2b$10$ZX5EqgQ6W9qJ.5l3Q7q9i.xVzQZVqZVqZVqZVqZVqZVqZVqZVqZVq', (SELECT role_id FROM odts.user_roles_master WHERE role_name = 'DISPATCHER' LIMIT 1), TRUE, FALSE, (SELECT warehouse_id FROM odts.warehouse_master WHERE warehouse_name LIKE '%Chaukhadi%' LIMIT 1), 1, NOW(), 1, NOW());
@@ -572,18 +571,15 @@ VALUES ('bhabhua', 'Warehouse (Bhabhua)', 'bhabhua@warehouse.local', '999999' ||
 -- Insert 8: Tekaria
 INSERT INTO odts.user_master (user_login_name, user_name, user_email, user_phone, password_hash, user_role_id, user_is_active_flag, user_is_locked_flag, user_warehouse_id, created_by, created_at, updated_by, updated_at)
 VALUES ('tekaria', 'Warehouse (Tekaria)', 'tekaria@warehouse.local', '999999' || LPAD(((SELECT warehouse_id FROM odts.warehouse_master WHERE warehouse_name LIKE '%Tekaria%' LIMIT 1) + 1)::text, 4, '0'), '$2b$10$ZX5EqgQ6W9qJ.5l3Q7q9i.xVzQZVqZVqZVqZVqZVqZVqZVqZVqZVq', (SELECT role_id FROM odts.user_roles_master WHERE role_name = 'DISPATCHER' LIMIT 1), TRUE, FALSE, (SELECT warehouse_id FROM odts.warehouse_master WHERE warehouse_name LIKE '%Tekaria%' LIMIT 1), 1, NOW(), 1, NOW());
-
-
+--
 UPDATE odts.user_master 
 SET password_hash = '$2b$10$KnKPtM2Pp6Qrrq3DmK9AweWqL6H69vSSa1zztd0MCUlFyrU5.ZXOO'
 WHERE user_login_name IN (
   'chaukhadi', 'shivpur', 'tarna', 'goenka', 'bhupur', 'dafi', 'bhabhua', 'tekaria'
 );
-
 -- Verify
 SELECT user_login_name, password_hash FROM odts.user_master 
 WHERE user_login_name IN ('chaukhadi', 'shivpur', 'tarna', 'goenka', 'bhupur', 'dafi', 'bhabhua', 'tekaria');
-
 --
 INSERT INTO odts.whatsapp_message_templates (template_name, message_body, created_by) VALUES
 ('Order Confirmation', 'Hi {{dealer_name}}, your order has been confirmed. Your Dealer Code: {{dealer_code}}. We will contact you shortly with dispatch details.', 0),
