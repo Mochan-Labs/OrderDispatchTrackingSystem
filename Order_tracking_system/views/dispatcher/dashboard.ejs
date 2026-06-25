@@ -280,6 +280,13 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
       return;
     }
 
+    // Validate dispatch quantity is greater than 0
+    const dispatchQty = parseInt(dispatchItemForm.dispatch_bags);
+    if (dispatchQty <= 0) {
+      setErr('❌ Dispatch quantity must be greater than 0');
+      return;
+    }
+
     // Validate driver phone is exactly 10 digits
     if (dispatchItemForm.dispatch_driver_phone.length !== 10) {
       setErr('❌ Driver phone must be exactly 10 digits');
@@ -287,7 +294,6 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
     }
 
     // Validate dispatch quantity against warehouse stock
-    const dispatchQty = parseInt(dispatchItemForm.dispatch_bags);
     const availableQty = parseInt(dispatchItemForm.warehouse_available_qty) || 0;
 
     if (dispatchQty > availableQty) {
@@ -593,6 +599,16 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
 
   const submit = async () => {
     console.log('[DispatchModal] Submit - isExistingDispatch:', isExistingDispatch, 'order_status:', order.order_status, 'dispatch_vehicle_number:', order.dispatch_vehicle_number);
+
+    // Validate dispatch quantities are greater than 0
+    if (items && items.length > 0) {
+      for (let idx = 0; idx < items.length; idx++) {
+        const dispatchQty = parseInt(form[`dispatch_bags_${idx}`] || 0);
+        if (dispatchQty <= 0) {
+          return setErr(`Product "${items[idx].product_name}": dispatch quantity must be greater than 0`);
+        }
+      }
+    }
 
     // Validate dispatch form fields (always required for initial dispatch)
     if (!isExistingDispatch) {
@@ -909,9 +925,16 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
                           placeholder="Quantity to dispatch"
                           value={dispatchItemForm.dispatch_bags}
                           onChange={(e) => setDispatchItemForm({...dispatchItemForm, dispatch_bags: e.target.value})}
-                          className={`form-control ${parseInt(dispatchItemForm.dispatch_bags) > (parseInt(dispatchItemForm.warehouse_available_qty) || 0) && dispatchItemForm.dispatch_bags ? 'is-invalid' : ''}`}
+                          className={`form-control ${(parseInt(dispatchItemForm.dispatch_bags) > (parseInt(dispatchItemForm.warehouse_available_qty) || 0) && dispatchItemForm.dispatch_bags) || (dispatchItemForm.dispatch_bags && parseInt(dispatchItemForm.dispatch_bags) <= 0) ? 'is-invalid' : ''}`}
+                          min="1"
+                          step="1"
                           required
                         />
+                        {dispatchItemForm.dispatch_bags && parseInt(dispatchItemForm.dispatch_bags) <= 0 && (
+                          <div className="text-danger small mt-1">
+                            ⚠️ Quantity must be greater than 0.
+                          </div>
+                        )}
                         {parseInt(dispatchItemForm.dispatch_bags) > (parseInt(dispatchItemForm.warehouse_available_qty) || 0) && dispatchItemForm.dispatch_bags && (
                           <div className="text-danger small mt-1">
                             ⚠️ Cannot dispatch {dispatchItemForm.dispatch_bags} bags. Only {dispatchItemForm.warehouse_available_qty} available.
@@ -1464,65 +1487,118 @@ function DealerOrdersModal({ orders, dealerId, onClose, onBack, onAccept, onDisp
             {dealerOrders.length === 0 ? (
               <p className="text-muted text-center py-3">No pending orders</p>
             ) : (
-              <div className="list-group">
-                {dealerOrders.map(order => (
-                  <div key={order.order_id} className="list-group-item" style={{ padding: '1rem' }}>
-                    <div className="d-flex justify-content-between align-items-start mb-2">
-                      <div>
-                        <div className="fw-semibold">Order #{order.order_id}</div>
-                        <small className="text-muted">{fmt(order.order_date)}</small>
-                      </div>
-                      <StatusBadge status={order.order_status} />
-                    </div>
-                    <div className="row g-2 small mb-3">
-                      <div className="col-6 col-sm-3">
-                        <div className="text-muted">Product</div>
-                        <div className="fw-semibold">{parseItems(order)[0]?.product_name || '—'}</div>
-                      </div>
-                      <div className="col-6 col-sm-3">
-                        <div className="text-muted">Qty (MT)</div>
-                        <div className="fw-semibold">{(() => {
-                          const items = parseItems(order);
-                          const total = items.reduce((s, i) => s + parseFloat(i.order_quantity || 0), 0);
-                          return total > 0 ? total.toFixed(3) : order.order_quantity || '—';
-                        })()}</div>
-                      </div>
-                      <div className="col-6 col-sm-3">
-                        <div className="text-muted">Party</div>
-                        <div className="fw-semibold">{order.party_company_name || order.party_name_col || '—'}</div>
-                      </div>
-                      <div className="col-6 col-sm-3">
-                        <div className="text-muted">Load Type</div>
-                        <div className="fw-semibold">{order.load_type_desc || order.load_type_code || '—'}</div>
-                      </div>
-                    </div>
-                    {/* Action buttons */}
-                    <div className="d-flex gap-2 flex-wrap" style={{ marginTop: '0.75rem' }}>
-                      <button className="btn btn-sm btn-outline-primary" onClick={() => onView(order)}>
-                        👁️ View
-                      </button>
-                      {order.order_status === 'ORDER_PLACED' && (
-                        <button
-                          className="btn btn-sm btn-outline-info"
-                          disabled={accepting[order.order_id]}
-                          onClick={() => handleAccept(order.order_id)}
-                        >
-                          {accepting[order.order_id] ? (
-                            <><span className="spinner-border spinner-border-sm me-1"></span>Accepting...</>
-                          ) : (
-                            '✅ Accept'
-                          )}
-                        </button>
-                      )}
-                      {order.order_status === 'ACCEPTED' && (
-                        <button className="btn btn-sm btn-success" onClick={() => onDispatch(order)}>
-                          🚛 Dispatch
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <table className="table table-hover table-sm mb-0">
+                <thead className="table-light" style={{ position: 'sticky', top: 0 }}>
+                  <tr>
+                    <th style={{ width: '70px' }}>Order #</th>
+                    <th style={{ width: '120px' }}>Date</th>
+                    <th style={{ width: '100px' }}>Product</th>
+                    <th style={{ width: '70px' }}>Bags</th>
+                    <th style={{ width: '80px' }}>Qty (MT)</th>
+                    <th style={{ width: '120px' }}>Party</th>
+                    <th style={{ width: '100px' }}>Load Type</th>
+                    <th style={{ width: '80px' }}>Status</th>
+                    <th style={{ width: '120px' }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dealerOrders.flatMap((order, orderIdx) => {
+                    const items = parseItems(order);
+                    const totalBags = items.reduce((s, i) => s + parseInt(i.order_bags || 0), 0);
+                    const totalQty = items.reduce((s, i) => s + parseFloat(i.order_quantity || 0), 0);
+
+                    // If order has multiple items, show each item on separate row
+                    if (items.length > 1) {
+                      return [
+                        ...items.map((item, itemIdx) => (
+                          <tr key={`${order.order_id}-item-${itemIdx}`} style={{ fontSize: '0.85rem' }}>
+                            {itemIdx === 0 ? (
+                              <>
+                                <td className="fw-semibold" rowSpan={items.length + 1}>#{order.order_id}</td>
+                                <td className="small text-muted" rowSpan={items.length + 1}>{fmt(order.order_date)}</td>
+                              </>
+                            ) : null}
+                            <td>{item.product_name}</td>
+                            <td className="text-center">{item.order_bags || '—'}</td>
+                            <td className="text-center">{parseFloat(item.order_quantity || 0).toFixed(3)}</td>
+                            {itemIdx === 0 ? (
+                              <>
+                                <td className="small" rowSpan={items.length + 1}>{order.party_company_name || order.party_name_col || '—'}</td>
+                                <td className="small" rowSpan={items.length + 1}>{order.load_type_desc || order.load_type_code || '—'}</td>
+                                <td rowSpan={items.length + 1}><StatusBadge status={order.order_status} /></td>
+                                <td className="text-nowrap" rowSpan={items.length + 1}>
+                                  <div className="d-flex gap-1" style={{ fontSize: '0.8rem' }}>
+                                    <button className="btn btn-sm btn-outline-primary" title="View order" onClick={() => onView(order)}>
+                                      👁️
+                                    </button>
+                                    {order.order_status === 'ORDER_PLACED' && (
+                                      <button
+                                        className="btn btn-sm btn-outline-info"
+                                        title="Accept order"
+                                        disabled={accepting[order.order_id]}
+                                        onClick={() => handleAccept(order.order_id)}
+                                      >
+                                        {accepting[order.order_id] ? '...' : '✅'}
+                                      </button>
+                                    )}
+                                    {order.order_status === 'ACCEPTED' && (
+                                      <button className="btn btn-sm btn-success" title="Dispatch order" onClick={() => onDispatch(order)}>
+                                        🚛
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </>
+                            ) : null}
+                          </tr>
+                        )),
+                        // Total row
+                        <tr key={`${order.order_id}-total`} style={{ fontSize: '0.85rem', fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>
+                          <td colSpan="2" className="text-end">Total:</td>
+                          <td className="text-center">{totalBags}</td>
+                          <td className="text-center">{totalQty.toFixed(3)}</td>
+                        </tr>
+                      ];
+                    }
+
+                    // Single item order - show normally
+                    return (
+                      <tr key={order.order_id} style={{ fontSize: '0.85rem' }}>
+                        <td className="fw-semibold">#{order.order_id}</td>
+                        <td className="small text-muted">{fmt(order.order_date)}</td>
+                        <td>{items[0]?.product_name || '—'}</td>
+                        <td className="text-center">{items[0]?.order_bags || '—'}</td>
+                        <td className="text-center">{items[0] ? parseFloat(items[0].order_quantity || 0).toFixed(3) : '—'}</td>
+                        <td className="small">{order.party_company_name || order.party_name_col || '—'}</td>
+                        <td className="small">{order.load_type_desc || order.load_type_code || '—'}</td>
+                        <td><StatusBadge status={order.order_status} /></td>
+                        <td className="text-nowrap">
+                          <div className="d-flex gap-1" style={{ fontSize: '0.8rem' }}>
+                            <button className="btn btn-sm btn-outline-primary" title="View order" onClick={() => onView(order)}>
+                              👁️
+                            </button>
+                            {order.order_status === 'ORDER_PLACED' && (
+                              <button
+                                className="btn btn-sm btn-outline-info"
+                                title="Accept order"
+                                disabled={accepting[order.order_id]}
+                                onClick={() => handleAccept(order.order_id)}
+                              >
+                                {accepting[order.order_id] ? '...' : '✅'}
+                              </button>
+                            )}
+                            {order.order_status === 'ACCEPTED' && (
+                              <button className="btn btn-sm btn-success" title="Dispatch order" onClick={() => onDispatch(order)}>
+                                🚛
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             )}
           </div>
         </div>

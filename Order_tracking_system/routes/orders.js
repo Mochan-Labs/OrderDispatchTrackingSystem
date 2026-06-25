@@ -375,6 +375,7 @@ router.get('/admin/dealer-orders', ensureAdmin, async (req, res) => {
     canViewAllOrders: true,  // Can view all dealers' orders
     isAdminOrOffice: false,  // No special admin actions (like Edit Dispatch)
     isDispatcher: false,
+    isAdminDealerOrdersView: true,  // Distinguish from regular orders view
     defaultStartDate: startDate,
     defaultEndDate: endDate
   });

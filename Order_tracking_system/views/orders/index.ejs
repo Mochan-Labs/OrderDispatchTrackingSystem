@@ -8,13 +8,14 @@ window._IS_ADMIN = <%= isAdmin ? 'true' : 'false' %>;
 window._CAN_VIEW_ALL = <%= canViewAllOrders ? 'true' : 'false' %>;
 window._IS_ADMIN_OR_OFFICE = <%= isAdminOrOffice ? 'true' : 'false' %>;
 window._IS_DISPATCHER = <%= isDispatcher ? 'true' : 'false' %>;
+window._IS_ADMIN_DEALER_ORDERS_VIEW = <%= typeof isAdminDealerOrdersView !== 'undefined' && isAdminDealerOrdersView ? 'true' : 'false' %>;
 console.log('[Window vars set]', { _IS_ADMIN: window._IS_ADMIN, _IS_DISPATCHER: window._IS_DISPATCHER });
 </script>
 
 <nav aria-label="breadcrumb" class="mb-3">
   <ol class="breadcrumb">
     <li class="breadcrumb-item"><a href="/dashboard">Dashboard</a></li>
-    <li class="breadcrumb-item active"><%= isAdminOrOffice ? 'All Orders & Dispatch' : 'My Orders' %></li>
+    <li class="breadcrumb-item active"><%= typeof isAdminDealerOrdersView !== 'undefined' && isAdminDealerOrdersView ? 'Dealer Orders' : (isAdminOrOffice ? 'All Orders & Dispatch' : 'My Orders') %></li>
   </ol>
 </nav>
 <div id="app-root"></div>
@@ -43,6 +44,7 @@ const IS_ADMIN = window._IS_ADMIN === 'true' || window._IS_ADMIN === true;
 const CAN_VIEW_ALL = window._CAN_VIEW_ALL === 'true' || window._CAN_VIEW_ALL === true;
 const IS_ADMIN_OR_OFFICE = window._IS_ADMIN_OR_OFFICE === 'true' || window._IS_ADMIN_OR_OFFICE === true;
 const IS_DISPATCHER = window._IS_DISPATCHER === 'true' || window._IS_DISPATCHER === true;
+const IS_ADMIN_DEALER_ORDERS_VIEW = window._IS_ADMIN_DEALER_ORDERS_VIEW === 'true' || window._IS_ADMIN_DEALER_ORDERS_VIEW === true;
 
 const STATUS_CONFIG = {
   ORDER_PLACED:         { text: 'Order Placed',         icon: '🕐', bg: '#fd7e14', tc: '#fff' },
@@ -187,18 +189,6 @@ function ViewOrderModal({ order, onClose }) {
               </div>
               <div className="col-md-6">
                 <div className="p-3 bg-light rounded">
-                  <div className="text-muted small">Product</div>
-                  <div className="fw-semibold">{order.product_name || '—'}</div>
-                </div>
-              </div>
-              <div className="col-md-6">
-                <div className="p-3 bg-light rounded">
-                  <div className="text-muted small">Quantity</div>
-                  <div className="fw-semibold">{parseFloat(order.quantity || 0).toFixed(3)} MT</div>
-                </div>
-              </div>
-              <div className="col-md-6">
-                <div className="p-3 bg-light rounded">
                   <div className="text-muted small">Party</div>
                   <div className="fw-semibold">{order.party_name || '—'}</div>
                 </div>
@@ -209,6 +199,65 @@ function ViewOrderModal({ order, onClose }) {
                   <div><StatusBadge status={order.order_status}/></div>
                 </div>
               </div>
+            </div>
+
+            {/* Order Items Grid */}
+            <h6 className="fw-bold text-muted mb-3 text-uppercase small">Order Items</h6>
+            <div className="mb-4">
+              {(() => {
+                const items = Array.isArray(order.items) && order.items.length > 0 ? order.items : [];
+                if (items.length === 0) {
+                  return (
+                    <table className="table table-sm table-bordered mb-0">
+                      <thead className="table-light">
+                        <tr>
+                          <th>Product</th>
+                          <th>Bags</th>
+                          <th>Qty (MT)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td>{order.product_name || '—'}</td>
+                          <td className="text-center">{order.order_bags || '—'}</td>
+                          <td className="text-center">{parseFloat(order.quantity || 0).toFixed(3)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  );
+                }
+
+                const totalBags = items.reduce((s, i) => s + parseInt(i.order_bags || 0), 0);
+                const totalQty = items.reduce((s, i) => s + parseFloat(i.order_quantity || 0), 0);
+
+                return (
+                  <>
+                    <table className="table table-sm table-bordered mb-0">
+                      <thead className="table-light">
+                        <tr>
+                          <th>Product</th>
+                          <th className="text-center">Bags</th>
+                          <th className="text-center">Qty (MT)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {items.map((item, idx) => (
+                          <tr key={idx}>
+                            <td>{item.product_name || '—'}</td>
+                            <td className="text-center">{item.order_bags || '—'}</td>
+                            <td className="text-center">{parseFloat(item.order_quantity || 0).toFixed(3)}</td>
+                          </tr>
+                        ))}
+                        <tr className="table-light fw-bold">
+                          <td>Total</td>
+                          <td className="text-center">{totalBags}</td>
+                          <td className="text-center">{totalQty.toFixed(3)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </>
+                );
+              })()}
             </div>
 
             {/* Dispatch Information */}
@@ -1631,7 +1680,7 @@ function App() {
       {/* Orders Table */}
       <div className="card shadow-sm">
         <div className="card-header bg-white d-flex align-items-center justify-content-between py-2 py-sm-3 flex-wrap gap-2">
-          <h5 className="mb-0 fw-semibold">{IS_ADMIN_OR_OFFICE ? '📊 All Orders & Dispatch' : '📋 My Orders'}</h5>
+          <h5 className="mb-0 fw-semibold">{IS_ADMIN_DEALER_ORDERS_VIEW ? '📋 Dealer Orders' : (IS_ADMIN_OR_OFFICE ? '📊 All Orders & Dispatch' : '📋 My Orders')}</h5>
           <div className="d-flex gap-1 gap-sm-2 flex-wrap">
             {IS_ADMIN_OR_OFFICE && (
               <button className={`btn btn-sm ${showDispatchDetails ? 'btn-info' : 'btn-outline-info'}`}
@@ -1839,7 +1888,7 @@ function App() {
                           {/* Edit on ORDER_PLACED */}
                           {o.order_status === 'ORDER_PLACED' && (
                             <button className="btn btn-sm btn-outline-info me-1" onClick={() => {
-                              const editUrl = CAN_VIEW_ALL && !IS_ADMIN_OR_OFFICE
+                              const editUrl = IS_ADMIN_DEALER_ORDERS_VIEW
                                 ? `/admin/dealer-orders?action=edit&id=${o.order_id}`
                                 : `/orders?action=edit&id=${o.order_id}`;
                               window.location.href = editUrl;

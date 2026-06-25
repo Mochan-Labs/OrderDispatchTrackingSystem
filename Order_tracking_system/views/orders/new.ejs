@@ -10,7 +10,7 @@
 <nav aria-label="breadcrumb" class="mb-3">
   <ol class="breadcrumb">
     <li class="breadcrumb-item"><a href="/dashboard">Dashboard</a></li>
-    <li class="breadcrumb-item"><a href="/orders">My Orders</a></li>
+    <li class="breadcrumb-item"><a href="<%= returnUrl %>">Orders</a></li>
     <li class="breadcrumb-item active" id="page-title"><%= editOrderId ? 'Edit Order' : 'Place New Order' %></li>
   </ol>
 </nav>
@@ -23,7 +23,7 @@
           <h4 class="mb-1" id="page-header"><%= editOrderId ? 'Edit Order' : 'New Order' %></h4>
           <div class="text-muted small">Add one or more products. Party, address &amp; loading details are common to all products.</div>
         </div>
-        <a href="/orders" class="btn btn-outline-secondary btn-sm">Back to Orders</a>
+        <a href="<%= returnUrl %>" class="btn btn-outline-secondary btn-sm">Back to Orders</a>
       </div>
       <div class="card-body p-4">
         <div id="form-alert" class="alert d-none" role="alert"></div>
@@ -149,7 +149,7 @@
           </div>
 
           <div class="col-12 d-flex gap-2 justify-content-end pt-2">
-            <a href="/orders" class="btn btn-light border">Cancel</a>
+            <a href="<%= returnUrl %>" class="btn btn-light border">Cancel</a>
             <button type="submit" class="btn btn-primary" id="submit-btn"><%= editOrderId ? 'Update Order' : 'Place Order' %></button>
           </div>
         </form>
@@ -603,7 +603,7 @@
       // Check if order is in ORDER_PLACED status
       if (order.order_status !== 'ORDER_PLACED') {
         alert('Order can only be edited when in ORDER_PLACED status');
-        window.location.href = '/orders';
+        window.location.href = returnUrl;
         return;
       }
 
@@ -672,7 +672,7 @@
     } catch (e) {
       console.error('Failed to prefill edit order:', e);
       alert('Error loading order: ' + e.message);
-      window.location.href = '/orders';
+      window.location.href = returnUrl;
     }
   }
 
@@ -708,10 +708,10 @@
         const product_id = row.querySelector('.item-product').value;
         const bags       = row.querySelector('.item-bags').value.trim();
         if (!product_id) throw new Error(`Row ${idx + 1}: please select a product`);
-        if (!bags || parseInt(bags, 10) < 1) throw new Error(`Row ${idx + 1}: number of bags is required`);
-        const order_bags     = parseInt(bags, 10);
-        const order_quantity = parseFloat((order_bags * KG_PER_BAG / 1000).toFixed(3));
-        items.push({ product_id: parseInt(product_id), order_bags, order_quantity });
+        const bagsQty = parseInt(bags, 10);
+        if (!bags || bagsQty <= 0) throw new Error(`Row ${idx + 1}: quantity must be greater than 0`);
+        const order_quantity = parseFloat((bagsQty * KG_PER_BAG / 1000).toFixed(3));
+        items.push({ product_id: parseInt(product_id), order_bags: bagsQty, order_quantity });
       }
       if (items.length === 0) throw new Error('At least one product is required');
 
