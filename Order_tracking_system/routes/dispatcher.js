@@ -681,9 +681,14 @@ router.get('/api/orders/:orderId/dispatch-items', ensureAuth, async (req, res) =
     }
 
     const result = await pool.query(
-      `SELECT * FROM odts.order_dispatch_items
-       WHERE dispatch_id IN (SELECT dispatch_id FROM odts.order_dispatch WHERE order_id = $1)
-       ORDER BY created_at DESC`,
+      `SELECT odi.*,
+              pm.product_name,
+              wm.warehouse_name AS actual_loading_location_code
+       FROM odts.order_dispatch_items odi
+       LEFT JOIN odts.product_master pm ON pm.product_id = odi.dispatch_product_id
+       LEFT JOIN odts.warehouse_master wm ON wm.warehouse_id = odi.dispatch_warehouse_id
+       WHERE odi.dispatch_id IN (SELECT dispatch_id FROM odts.order_dispatch WHERE order_id = $1)
+       ORDER BY odi.created_at DESC`,
       [orderId]
     );
     await addPresignedUrlsToDispatchItems(result.rows);

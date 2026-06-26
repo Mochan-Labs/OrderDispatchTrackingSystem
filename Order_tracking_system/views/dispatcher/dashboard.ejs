@@ -258,7 +258,21 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
       fetch(`/api/orders/${order.order_id}/dispatch-items`, { credentials: 'include' })
         .then(r => r.json())
         .then(data => {
-          setDispatchItems(Array.isArray(data) ? data : []);
+          const items = Array.isArray(data) ? data : [];
+          setDispatchItems(items);
+
+          // Populate form with dispatch item quantities if this is an existing dispatch
+          if (items.length > 0 && isExistingDispatch) {
+            setForm(prevForm => {
+              const updatedForm = { ...prevForm };
+              items.forEach((dispatchItem, idx) => {
+                updatedForm[`dispatch_bags_${idx}`] = dispatchItem.dispatch_bags || 0;
+                updatedForm[`dispatch_quantity_${idx}`] = dispatchItem.dispatch_quantity || 0;
+              });
+              return updatedForm;
+            });
+          }
+
           setLoadingItems(false);
         })
         .catch(e => {
@@ -666,8 +680,8 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
   const submit = async () => {
     console.log('[DispatchModal] Submit - isExistingDispatch:', isExistingDispatch, 'order_status:', order.order_status, 'dispatch_vehicle_number:', order.dispatch_vehicle_number);
 
-    // Validate dispatch quantities are greater than 0
-    if (items && items.length > 0) {
+    // Validate dispatch quantities are greater than 0 (only for initial dispatch)
+    if (!isExistingDispatch && items && items.length > 0) {
       for (let idx = 0; idx < items.length; idx++) {
         const dispatchQty = parseInt(form[`dispatch_bags_${idx}`] || 0);
         if (dispatchQty <= 0) {
@@ -1427,6 +1441,7 @@ function ViewOrderModal({ order, onClose, onBack }) {
                       <table className="table table-sm mb-0">
                         <thead className="table-light" style={{ position: 'sticky', top: 0 }}>
                           <tr>
+                            <th style={{ width: '100px' }}>Product</th>
                             <th style={{ width: '70px' }}>Bags</th>
                             <th style={{ width: '90px' }}>Qty (MT)</th>
                             <th style={{ width: '120px' }}>Driver</th>
@@ -1439,6 +1454,7 @@ function ViewOrderModal({ order, onClose, onBack }) {
                         <tbody>
                           {dispatchItems.map((item, idx) => (
                             <tr key={idx}>
+                              <td className="small">{item.product_name || '—'}</td>
                               <td className="small">{item.dispatch_bags}</td>
                               <td className="small">{item.dispatch_quantity ? parseFloat(item.dispatch_quantity).toFixed(3) : '—'}</td>
                               <td className="small" title={item.dispatch_driver_name}>{item.dispatch_driver_name ? item.dispatch_driver_name.substring(0, 12) : '—'}</td>
@@ -2348,10 +2364,24 @@ function App() {
   const [selectedTotalDealerId, setSelectedTotalDealerId] = useState(null);
   const [showTotalOrdersList, setShowTotalOrdersList] = useState(false);
   const [allOverdueOrders, setAllOverdueOrders] = useState([]);
+  const [exporting, setExporting] = useState(false);
   const esRef = useRef(null);
   const retryRef = useRef(null);
 
   const notify = (msg, type = 'success') => setToast({ msg, type });
+
+  const handleExportDispatcherExcel = async () => {
+    setExporting(true);
+    try {
+      await exportDispatcherExcel();
+      notify('Export successful!', 'success');
+    } catch (e) {
+      console.error('Export failed:', e);
+      notify('Export failed', 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const isOrderOverdue = (order) => {
     if (['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(order.order_status)) return false; // Not overdue if in dispatch state
@@ -2491,64 +2521,111 @@ function App() {
     }
   };
 
-  const exportDispatcherExcel = () => {
+  const exportDispatcherExcel = async () => {
     const data = [];
-    orders.forEach(o => {
-      // Use order_status directly (now contains dispatch status too)
-      const realStatus = o.order_status.toLowerCase();
-      const deliveryLocation = o.preferred_location_desc || o.preferred_location_code || '';
-      const items = o.items && Array.isArray(o.items) ? o.items : [];
 
-      if (items.length > 0) {
+    // Fetch dispatch items for all orders with dispatch_id
+    const dispatchItemsMap = {};
+    for (const o of orders.filter(o => o.dispatch_id)) {
+      try {
+        const res = await fetch(`/api/orders/${o.order_id}/dispatch-items`, { credentials: 'include' });
+        const items = await res.json();
+        dispatchItemsMap[o.order_id] = Array.isArray(items) ? items : [];
+      } catch (e) {
+        console.error(`Failed to fetch dispatch items for order ${o.order_id}:`, e);
+        dispatchItemsMap[o.order_id] = [];
+      }
+    }
+
+    orders.forEach(o => {
+      const items = o.items && Array.isArray(o.items) ? o.items : [];
+      const dispatchItems = dispatchItemsMap[o.order_id] || [];
+
+      // If order has dispatch items, export each dispatch item as a separate row
+      if (dispatchItems.length > 0) {
+        dispatchItems.forEach(dispatchItem => {
+          data.push({
+            'Order Id': o.order_id,
+            'Dealer Name': o.dealer_name || '',
+            'Dealer Company Name': o.dealer_company_name || '',
+            'Product': dispatchItem.product_name || o.product_name || '',
+            'Status': o.order_status || '',
+            'Order Date': fmt(o.order_date),
+            'Order Bags': dispatchItem.dispatch_bags || '',
+            'Order Qty': dispatchItem.dispatch_quantity || '',
+            'Dispatch Date': dispatchItem.created_at ? fmt(dispatchItem.created_at) : '',
+            'Dispatch Bags': dispatchItem.dispatch_bags || '',
+            'Dispatch Qty': dispatchItem.dispatch_quantity || '',
+            'Dispatch Notes': dispatchItem.dispatch_notes || '',
+            'Delivery Location': o.party_address || o.delivery_location || '',
+            'Vehicle No': dispatchItem.dispatch_vehicle_number || '',
+            'Driver Name': dispatchItem.dispatch_driver_name || '',
+            'Driver Phone': dispatchItem.dispatch_driver_phone || '',
+            'Bilty No': dispatchItem.dispatch_bilty_number || '',
+            'Party': o.party_name || '',
+            'Address': o.party_address || '',
+            'Load Type': o.load_type_desc || '',
+            'Preferred Location': o.preferred_location_desc || '',
+            'Actual Location': dispatchItem.actual_loading_location_code || '',
+          });
+        });
+      } else if (items.length > 0) {
+        // If order has items but no dispatch, export order items
         items.forEach(item => {
           data.push({
             'Order Id': o.order_id,
-            'Dealer Name': o.dealer_name || o.dealer_login_name || '',
+            'Dealer Name': o.dealer_name || '',
             'Dealer Company Name': o.dealer_company_name || '',
             'Product': item.product_name || '',
-            'Status': realStatus,
+            'Status': o.order_status || '',
             'Order Date': fmt(o.order_date),
             'Order Bags': item.order_bags || '',
             'Order Qty': item.order_quantity || '',
-            'Dispatch Date': o.dispatch_created_at ? fmt(o.dispatch_created_at) : '',
-            'Delivery Location': deliveryLocation,
-            'Vehicle No': o.dispatch_vehicle_number || o.vehicle_number_on_order || '',
-            'Driver Name': o.dispatch_driver_name || o.driver_name_on_order || '',
-            'Driver Phone': o.dispatch_driver_phone || o.driver_phone_on_order || '',
-            'Bilty No': o.bilty_number || '',
-            'Remarks': o.remarks || '',
-            'Party': o.party_name || o.party_company_name || o.party_name_col || '',
+            'Dispatch Date': '',
+            'Dispatch Bags': '',
+            'Dispatch Qty': '',
+            'Dispatch Notes': '',
+            'Delivery Location': o.party_address || o.delivery_location || '',
+            'Vehicle No': '',
+            'Driver Name': '',
+            'Driver Phone': '',
+            'Bilty No': '',
+            'Party': o.party_name || '',
             'Address': o.party_address || '',
-            'Load Type': o.load_type_desc || o.load_type_code || '',
-            'Preferred Location': o.preferred_location_desc || o.preferred_location_code || '',
-            'Actual Location': o.actual_location_desc || o.actual_loading_location_code || '',
+            'Load Type': o.load_type_desc || '',
+            'Preferred Location': o.preferred_location_desc || '',
+            'Actual Location': '',
           });
         });
       } else {
+        // Fallback for orders without items or dispatch
         data.push({
           'Order Id': o.order_id,
-          'Dealer Name': o.dealer_name || o.dealer_login_name || '',
+          'Dealer Name': o.dealer_name || '',
           'Dealer Company Name': o.dealer_company_name || '',
           'Product': o.product_name || '',
-          'Status': realStatus,
+          'Status': o.order_status || '',
           'Order Date': fmt(o.order_date),
-          'Order Bags': o.order_bags || '',
-          'Order Qty': o.order_quantity || '',
-          'Dispatch Date': o.dispatch_created_at ? fmt(o.dispatch_created_at) : '',
-          'Delivery Location': deliveryLocation,
-          'Vehicle No': o.dispatch_vehicle_number || o.vehicle_number_on_order || '',
-          'Driver Name': o.dispatch_driver_name || o.driver_name_on_order || '',
-          'Driver Phone': o.dispatch_driver_phone || o.driver_phone_on_order || '',
-          'Bilty No': o.bilty_number || '',
-          'Remarks': o.remarks || '',
-          'Party': o.party_name || o.party_company_name || o.party_name_col || '',
+          'Order Bags': '',
+          'Order Qty': '',
+          'Dispatch Date': '',
+          'Dispatch Bags': '',
+          'Dispatch Qty': '',
+          'Dispatch Notes': '',
+          'Delivery Location': o.party_address || o.delivery_location || '',
+          'Vehicle No': '',
+          'Driver Name': '',
+          'Driver Phone': '',
+          'Bilty No': '',
+          'Party': o.party_name || '',
           'Address': o.party_address || '',
-          'Load Type': o.load_type_desc || o.load_type_code || '',
-          'Preferred Location': o.preferred_location_desc || o.preferred_location_code || '',
-          'Actual Location': o.actual_location_desc || o.actual_loading_location_code || '',
+          'Load Type': o.load_type_desc || '',
+          'Preferred Location': o.preferred_location_desc || '',
+          'Actual Location': '',
         });
       }
     });
+
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Dispatcher Orders');
@@ -2857,8 +2934,12 @@ function App() {
           <label className="form-check-label" htmlFor="toggleDispatched">🚛 Show Dispatched</label>
         </div>
         <div className="ms-auto d-flex gap-2">
-          <button className="btn btn-sm btn-outline-success" onClick={exportDispatcherExcel} disabled={orders.length === 0}>
-            ⬇️ Download
+          <button className="btn btn-sm btn-outline-success" onClick={handleExportDispatcherExcel} disabled={orders.length === 0 || exporting}>
+            {exporting ? (
+              <><span className="spinner-border spinner-border-sm me-2"></span>Exporting...</>
+            ) : (
+              <>⬇️ Download</>
+            )}
           </button>
           <button className="btn btn-sm btn-outline-secondary" onClick={fetchOrders} disabled={loading}>
             {loading

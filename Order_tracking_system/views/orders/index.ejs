@@ -193,7 +193,7 @@ function ViewOrderModal({ order, onClose }) {
     setLoadingDispatchItems(true);
     fetch(`/api/orders/${order.order_id}/dispatch-items`, { credentials: 'include' })
       .then(r => r.json())
-      .then(data => setDispatchItems(Array.isArray(data) ? data.filter(i => i.dispatch_bags) : []))
+      .then(data => setDispatchItems(Array.isArray(data) ? data : []))
       .catch(() => setDispatchItems([]))
       .finally(() => setLoadingDispatchItems(false));
   }, [order && order.order_id]);
@@ -214,26 +214,55 @@ function ViewOrderModal({ order, onClose }) {
             <div className="row g-3 mb-4">
               <div className="col-md-6">
                 <div className="p-3 bg-light rounded">
-                  <div className="text-muted small">Dealer</div>
-                  <div className="fw-semibold">{order.dealer_name || '—'}</div>
-                </div>
-              </div>
-              <div className="col-md-6">
-                <div className="p-3 bg-light rounded">
                   <div className="text-muted small">Order Date</div>
                   <div className="fw-semibold">{formatDateTime(order.order_date)}</div>
                 </div>
               </div>
               <div className="col-md-6">
                 <div className="p-3 bg-light rounded">
+                  <div className="text-muted small">Status</div>
+                  <div><StatusBadge status={order.order_status}/></div>
+                </div>
+              </div>
+              <div className="col-md-4">
+                <div className="p-3 bg-light rounded">
+                  <div className="text-muted small">Dealer</div>
+                  <div className="fw-semibold">{order.dealer_name || '—'}</div>
+                </div>
+              </div>
+              <div className="col-md-4">
+                <div className="p-3 bg-light rounded">
                   <div className="text-muted small">Party</div>
                   <div className="fw-semibold">{order.party_name || '—'}</div>
                 </div>
               </div>
+              <div className="col-md-4">
+                <div className="p-3 bg-light rounded">
+                  <div className="text-muted small">Contact Number</div>
+                  <div className="fw-semibold">{order.party_phone || '—'}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Shipping Details */}
+            <h6 className="fw-bold text-muted mb-3 text-uppercase small">Shipping Details</h6>
+            <div className="row g-3 mb-4">
+              <div className="col-12">
+                <div className="p-3 bg-light rounded">
+                  <div className="text-muted small">Delivery Address</div>
+                  <div className="fw-semibold">{order.party_address || order.delivery_location || '—'}</div>
+                </div>
+              </div>
               <div className="col-md-6">
                 <div className="p-3 bg-light rounded">
-                  <div className="text-muted small">Status</div>
-                  <div><StatusBadge status={order.order_status}/></div>
+                  <div className="text-muted small">Loading Type</div>
+                  <div className="fw-semibold">{order.load_type_desc || '—'}</div>
+                </div>
+              </div>
+              <div className="col-md-6">
+                <div className="p-3 bg-light rounded">
+                  <div className="text-muted small">Preferred Loading Location</div>
+                  <div className="fw-semibold">{order.preferred_location_desc || '—'}</div>
                 </div>
               </div>
             </div>
@@ -312,9 +341,11 @@ function ViewOrderModal({ order, onClose }) {
                 <table className="table table-sm table-bordered mb-0" style={{ fontSize: '.85rem' }}>
                   <thead className="table-light">
                     <tr>
+                      <th>Product</th>
                       <th className="text-center">Bags</th>
                       <th className="text-center">Qty (MT)</th>
                       <th>Driver</th>
+                      <th>Driver Phone</th>
                       <th>Vehicle</th>
                       <th>Bilty</th>
                       <th>Date</th>
@@ -322,22 +353,33 @@ function ViewOrderModal({ order, onClose }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {dispatchItems.map((item, idx) => (
-                      <tr key={idx}>
-                        <td className="text-center">{item.dispatch_bags}</td>
-                        <td className="text-center">{item.dispatch_quantity ? parseFloat(item.dispatch_quantity).toFixed(3) : '—'}</td>
-                        <td>{item.dispatch_driver_name || '—'}</td>
-                        <td>{item.dispatch_vehicle_number || '—'}</td>
-                        <td>{item.dispatch_bilty_number || '—'}</td>
-                        <td>{item.created_at ? formatDateTime(item.created_at) : '—'}</td>
-                        <td className="text-center">
-                          {item.dispatch_receipt_image_url ? (
-                            <button type="button" className="btn btn-sm btn-outline-primary py-0 px-1" style={{ fontSize: '.72rem' }}
-                              onClick={() => setPreviewUrl(item.dispatch_receipt_image_url)} title="View receipt">🧾 View</button>
-                          ) : '—'}
-                        </td>
-                      </tr>
-                    ))}
+                    {dispatchItems.map((item, idx) => {
+                      let dateStr = '';
+                      if (item.created_at) {
+                        const dt = new Date(item.created_at);
+                        const date = new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }).format(dt);
+                        const time = new Intl.DateTimeFormat('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }).format(dt);
+                        dateStr = `${date}\n${time}`;
+                      }
+                      return (
+                        <tr key={idx}>
+                          <td>{item.product_name || '—'}</td>
+                          <td className="text-center">{item.dispatch_bags}</td>
+                          <td className="text-center">{item.dispatch_quantity ? parseFloat(item.dispatch_quantity).toFixed(3) : '—'}</td>
+                          <td>{item.dispatch_driver_name || '—'}</td>
+                          <td>{item.dispatch_driver_phone ? <a href={`tel:${item.dispatch_driver_phone}`} className="text-decoration-none">{item.dispatch_driver_phone}</a> : '—'}</td>
+                          <td>{item.dispatch_vehicle_number || '—'}</td>
+                          <td>{item.dispatch_bilty_number || '—'}</td>
+                          <td style={{ whiteSpace: 'pre-line', fontSize: '0.8rem' }}>{dateStr || '—'}</td>
+                          <td className="text-center">
+                            {item.dispatch_receipt_image_url ? (
+                              <button type="button" className="btn btn-sm btn-outline-primary py-0 px-1" style={{ fontSize: '.72rem' }}
+                                onClick={() => setPreviewUrl(item.dispatch_receipt_image_url)} title="View receipt">🧾 View</button>
+                            ) : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1521,64 +1563,87 @@ function App() {
   const exportExcel = () => {
     const data = [];
     filtered.forEach(o => {
-      // Use order_status directly (now contains dispatch status too)
-      const realStatus = o.order_status.toLowerCase();
-
-      // If order has items, export each item as a separate row
-      if (o.items && o.items.length > 0) {
+      // If order has dispatch items, export each dispatch item as a separate row with order/item info
+      if (o.dispatchItems && o.dispatchItems.length > 0) {
+        o.dispatchItems.forEach(dispatchItem => {
+          data.push({
+            'Order Id': o.order_id,
+            'Dealer Name': o.dealer_name || '',
+            'Dealer Company Name': o.dealer_company_name || '',
+            'Product': dispatchItem.product_name || o.product_name || '',
+            'Status': o.order_status || '',
+            'Order Date': formatDateTime(o.order_date),
+            'Order Bags': dispatchItem.dispatch_bags || '',
+            'Order Qty': dispatchItem.dispatch_quantity || '',
+            'Dispatch Date': dispatchItem.created_at ? formatDateTime(dispatchItem.created_at) : '',
+            'Dispatch Bags': dispatchItem.dispatch_bags || '',
+            'Dispatch Qty': dispatchItem.dispatch_quantity || '',
+            'Dispatch Notes': dispatchItem.dispatch_notes || '',
+            'Delivery Location': o.party_address || o.delivery_location || '',
+            'Vehicle No': dispatchItem.dispatch_vehicle_number || '',
+            'Driver Name': dispatchItem.dispatch_driver_name || '',
+            'Driver Phone': dispatchItem.dispatch_driver_phone || '',
+            'Bilty No': dispatchItem.dispatch_bilty_number || '',
+            'Party': o.party_name || '',
+            'Address': o.party_address || '',
+            'Load Type': o.load_type_desc || '',
+            'Preferred Location': o.preferred_location_desc || '',
+            'Actual Location': dispatchItem.actual_loading_location_code || '',
+          });
+        });
+      } else if (o.items && o.items.length > 0) {
+        // If order has items but no dispatch, export order items
         o.items.forEach(item => {
           data.push({
             'Order Id': o.order_id,
             'Dealer Name': o.dealer_name || '',
             'Dealer Company Name': o.dealer_company_name || '',
             'Product': item.product_name || '',
-            'Status': realStatus,
+            'Status': o.order_status || '',
             'Order Date': formatDateTime(o.order_date),
             'Order Bags': item.order_bags || '',
             'Order Qty': item.order_quantity || '',
-            'Dispatch Date': o.dispatch_created_at ? formatDateTime(o.dispatch_created_at) : '',
-            'Dispatch Bags': item.order_dispatch_bags || '',
-            'Dispatch Qty': item.order_dispatch_quantity || '',
-            'Dispatch Notes': item.order_dispatch_comments || '',
-            'Delivery Location': o.delivery_location || '',
-            'Vehicle No': o.dispatch_vehicle_number || '',
-            'Driver Name': o.dispatch_driver_name || '',
-            'Driver Phone': o.dispatch_driver_phone || '',
-            'Bilty No': o.bilty_number || '',
-            'Remarks': o.remarks || '',
+            'Dispatch Date': '',
+            'Dispatch Bags': '',
+            'Dispatch Qty': '',
+            'Dispatch Notes': '',
+            'Delivery Location': o.party_address || o.delivery_location || '',
+            'Vehicle No': '',
+            'Driver Name': '',
+            'Driver Phone': '',
+            'Bilty No': '',
             'Party': o.party_name || '',
             'Address': o.party_address || '',
             'Load Type': o.load_type_desc || '',
             'Preferred Location': o.preferred_location_desc || '',
-            'Actual Location': o.actual_loading_location_code || '',
+            'Actual Location': '',
           });
         });
       } else {
-        // Fallback for orders without items
+        // Fallback for orders without items or dispatch
         data.push({
           'Order Id': o.order_id,
           'Dealer Name': o.dealer_name || '',
           'Dealer Company Name': o.dealer_company_name || '',
           'Product': o.product_name || '',
-          'Status': realStatus,
+          'Status': o.order_status || '',
           'Order Date': formatDateTime(o.order_date),
           'Order Bags': o.order_bags || '',
-          'Order Qty': `${o.quantity} ${o.unit}`,
-          'Dispatch Date': o.dispatch_created_at ? formatDateTime(o.dispatch_created_at) : '',
-          'Dispatch Bags': o.order_dispatch_bags || '',
-          'Dispatch Qty': o.order_dispatch_quantity || '',
-          'Dispatch Notes': o.order_dispatch_comments || '',
-          'Delivery Location': o.delivery_location || '',
-          'Vehicle No': o.dispatch_vehicle_number || '',
-          'Driver Name': o.dispatch_driver_name || '',
-          'Driver Phone': o.dispatch_driver_phone || '',
-          'Bilty No': o.bilty_number || '',
-          'Remarks': o.remarks || '',
+          'Order Qty': parseFloat(o.quantity || 0).toFixed(3),
+          'Dispatch Date': '',
+          'Dispatch Bags': '',
+          'Dispatch Qty': '',
+          'Dispatch Notes': '',
+          'Delivery Location': o.party_address || o.delivery_location || '',
+          'Vehicle No': '',
+          'Driver Name': '',
+          'Driver Phone': '',
+          'Bilty No': '',
           'Party': o.party_name || '',
           'Address': o.party_address || '',
           'Load Type': o.load_type_desc || '',
           'Preferred Location': o.preferred_location_desc || '',
-          'Actual Location': o.actual_loading_location_code || '',
+          'Actual Location': '',
         });
       }
     });

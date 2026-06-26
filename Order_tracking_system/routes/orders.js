@@ -64,6 +64,27 @@ const ITEMS_SUBQUERY = `
   ) AS items
 `;
 
+// Aggregate dispatch items from order_dispatch_items table
+const DISPATCH_ITEMS_SUBQUERY = `
+  (SELECT json_agg(json_build_object(
+      'dispatch_bags',    odi.dispatch_bags,
+      'dispatch_quantity', odi.dispatch_quantity::text,
+      'dispatch_driver_name', odi.dispatch_driver_name,
+      'dispatch_driver_phone', odi.dispatch_driver_phone,
+      'dispatch_vehicle_number', odi.dispatch_vehicle_number,
+      'dispatch_bilty_number', odi.dispatch_bilty_number,
+      'dispatch_notes', odi.dispatch_notes,
+      'product_name', pm_dispatch.product_name,
+      'actual_loading_location_code', wm_dispatch.warehouse_name,
+      'created_at', odi.created_at::text
+    ) ORDER BY odi.created_at DESC)
+   FROM odts.order_dispatch_items odi
+   LEFT JOIN odts.warehouse_master wm_dispatch ON wm_dispatch.warehouse_id = odi.dispatch_warehouse_id
+   LEFT JOIN odts.product_master pm_dispatch ON pm_dispatch.product_id = odi.dispatch_product_id
+   WHERE odi.dispatch_id IN (SELECT dispatch_id FROM odts.order_dispatch WHERE order_id = o.order_id)
+  ) AS dispatch_items
+`;
+
 function toOrderShape(row) {
   const rawItems = row.items;
   let items = [];
@@ -76,10 +97,18 @@ function toOrderShape(row) {
     : '';
   const totalQty = items.reduce((sum, i) => sum + parseFloat(i.order_quantity || 0), 0);
 
+  const rawDispatchItems = row.dispatch_items;
+  let dispatchItems = [];
+  if (rawDispatchItems) {
+    const parsed = typeof rawDispatchItems === 'string' ? JSON.parse(rawDispatchItems) : rawDispatchItems;
+    if (Array.isArray(parsed)) dispatchItems = parsed.filter(i => i && i.dispatch_bags);
+  }
+
   const order = {
     order_id:                row.order_id,
     dealer_id:               row.dealer_id,
     dealer_name:             row.dealer_name || null,
+    dealer_company_name:     row.dealer_company_name || null,
     items,
     product_name:            productName,
     quantity:                totalQty || parseFloat(row.order_quantity) || 0,
@@ -103,6 +132,7 @@ function toOrderShape(row) {
     on_hold_by_role:         row.on_hold_by_role || null,
     order_date:              row.order_date,
     dispatch:                null,
+    dispatchItems:           dispatchItems,
   };
   if (row.dispatch_id) {
     order.dispatch = {
@@ -231,7 +261,8 @@ async function fetchOrders({ dealerId, startDate, endDate }) {
            wm.warehouse_name  AS preferred_location_desc,
            wm_actual.warehouse_name  AS actual_loading_location_desc,
            od.dispatch_id,
-           ${ITEMS_SUBQUERY}
+           ${ITEMS_SUBQUERY},
+           ${DISPATCH_ITEMS_SUBQUERY}
     FROM odts.dealer_orders o
     LEFT JOIN odts.dealer_master       d  ON d.dealer_id  = o.dealer_id
     LEFT JOIN odts.dealer_party_master  dp ON dp.party_id  = o.party_id
