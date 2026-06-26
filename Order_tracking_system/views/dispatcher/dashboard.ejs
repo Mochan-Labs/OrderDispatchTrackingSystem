@@ -921,6 +921,7 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
                     <table className="table table-sm mb-0">
                       <thead className="table-light" style={{ position: 'sticky', top: 0 }}>
                         <tr>
+                          <th style={{ width: '100px' }}>Product</th>
                           <th style={{ width: '70px' }}>Bags</th>
                           <th style={{ width: '90px' }}>Qty (MT)</th>
                           <th style={{ width: '120px' }}>Driver</th>
@@ -933,6 +934,7 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
                       <tbody>
                         {dispatchItems.filter(item => item.dispatch_bags).map((item, idx) => (
                           <tr key={idx}>
+                            <td className="small">{item.product_name || '—'}</td>
                             <td className="small">{item.dispatch_bags}</td>
                             <td className="small">{item.dispatch_quantity ? parseFloat(item.dispatch_quantity).toFixed(3) : '—'}</td>
                             <td className="small" title={item.dispatch_driver_name}>{item.dispatch_driver_name ? item.dispatch_driver_name.substring(0, 12) : '—'}</td>

@@ -171,7 +171,7 @@ router.get('/api/dispatcher/orders', ensureDispatcher, async (req, res) => {
         dp.party_name AS party_name_col,
         dp.party_phone,
         dp.party_address,
-        lt.warehouse_name  AS load_type_desc,
+        lt.code_desc AS load_type_desc,
         pl.warehouse_name  AS preferred_location_desc,
         od.dispatch_id,
         (SELECT COALESCE(json_agg(json_build_object(
@@ -188,8 +188,8 @@ router.get('/api/dispatcher/orders', ensureDispatcher, async (req, res) => {
       FROM odts.dealer_orders o
       LEFT JOIN odts.dealer_master       d  ON d.dealer_id  = o.dealer_id
       LEFT JOIN odts.dealer_party_master  dp ON dp.party_id  = o.party_id
-      LEFT JOIN odts.warehouse_master lt ON lt.warehouse_type = 'loading_type'     AND lt.warehouse_code = o.load_type_code
-      LEFT JOIN odts.warehouse_master pl ON pl.warehouse_type = 'loading_location' AND pl.warehouse_code = o.preferred_location_code
+      LEFT JOIN odts.code_reference lt ON lt.code_type = 'loading_type' AND lt.code = o.load_type_code
+      LEFT JOIN odts.warehouse_master pl ON pl.warehouse_code = o.preferred_location_code
       LEFT JOIN odts.order_dispatch od ON od.order_id  = o.order_id
       WHERE ${whereClause}
       ORDER BY o.dealer_id, o.order_date ASC
