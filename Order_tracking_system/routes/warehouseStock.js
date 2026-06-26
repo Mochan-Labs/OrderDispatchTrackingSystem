@@ -1,6 +1,33 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { generatePresignedReadUrl } = require('../services/s3Service');
+
+// Resolve a stored receipt reference to a viewable URL.
+// Handles already-presigned URLs, external http(s) URLs, local /uploads paths,
+// full S3 URLs (.../receipts/...), and bare S3 keys (receipts/...).
+async function resolveReceiptUrl(url) {
+  if (!url) return url;
+  if (url.includes('?')) return url;
+  if (url.startsWith('/uploads/')) return url;
+
+  let s3Key = null;
+  const idx = url.indexOf('/receipts/');
+  if (idx !== -1) {
+    s3Key = url.substring(idx + 1);
+  } else if (url.startsWith('receipts/')) {
+    s3Key = url;
+  } else {
+    return url; // external URL or unknown format — use as-is
+  }
+
+  try {
+    return await generatePresignedReadUrl(s3Key);
+  } catch (err) {
+    console.error(`[WarehouseStock] Failed to presign receipt ${s3Key}:`, err.message);
+    return url;
+  }
+}
 
 // Middleware: ensure admin, stock_manager, or dispatcher
 function ensureAdminOrStockManagerOrDispatcher(req, res, next) {
@@ -69,6 +96,9 @@ router.get('/api/warehouse-stock', ensureAdminOrStockManagerOrDispatcher, async 
       ${whereClause}
       ORDER BY ws.warehouse_stock_date DESC, ws.warehouse_stock_id DESC
     `, params);
+    for (const row of result.rows) {
+      row.warehouse_receipt_image_url = await resolveReceiptUrl(row.warehouse_receipt_image_url);
+    }
     res.json(result.rows);
   } catch (e) {
     console.error('Error fetching warehouse stock:', e);

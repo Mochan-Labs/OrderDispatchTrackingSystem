@@ -159,9 +159,46 @@ function SummaryCard({ label, value, icon, borderColor, onClick, isDisabled }) {
   );
 }
 
+// Reusable in-app receipt image lightbox
+function ReceiptPreviewModal({ url, onClose }) {
+  if (!url) return null;
+  return (
+    <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.75)', zIndex: 2000 }} onClick={onClose}>
+      <div className="modal-dialog modal-dialog-centered modal-lg" onClick={e => e.stopPropagation()}>
+        <div className="modal-content">
+          <div className="modal-header" style={{ background: '#0d6efd', color: '#fff' }}>
+            <h5 className="modal-title mb-0">🧾 Dispatch Receipt</h5>
+            <button type="button" className="btn-close btn-close-white" onClick={onClose}></button>
+          </div>
+          <div className="modal-body text-center" style={{ background: '#f8f9fa' }}>
+            <img src={url} alt="Dispatch receipt" style={{ maxWidth: '100%', maxHeight: '70vh', borderRadius: '8px', border: '1px solid #dee2e6' }} />
+          </div>
+          <div className="modal-footer">
+            <a href={url} target="_blank" rel="noopener noreferrer" className="btn btn-outline-primary btn-sm">↗ Open in new tab</a>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ViewOrderModal({ order, onClose }) {
+  const [dispatchItems, setDispatchItems] = useState([]);
+  const [loadingDispatchItems, setLoadingDispatchItems] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState(null);
+
+  useEffect(() => {
+    if (!order || !order.order_id) { setDispatchItems([]); return; }
+    setLoadingDispatchItems(true);
+    fetch(`/api/orders/${order.order_id}/dispatch-items`, { credentials: 'include' })
+      .then(r => r.json())
+      .then(data => setDispatchItems(Array.isArray(data) ? data.filter(i => i.dispatch_bags) : []))
+      .catch(() => setDispatchItems([]))
+      .finally(() => setLoadingDispatchItems(false));
+  }, [order && order.order_id]);
+
   if (!order) return null;
-  const d = order.dispatch;
 
   return (
     <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.5)' }}>
@@ -260,55 +297,49 @@ function ViewOrderModal({ order, onClose }) {
               })()}
             </div>
 
-            {/* Dispatch Information */}
-            {d ? (
-              <>
-                <h6 className="fw-bold text-muted mb-3 text-uppercase small">Dispatch Information</h6>
-                <div className="row g-3 mb-4">
-                  <div className="col-md-6">
-                    <div className="p-3 bg-light rounded">
-                      <div className="text-muted small">Vehicle Number</div>
-                      <div className="fw-semibold">{d.dispatch_vehicle_number || '—'}</div>
-                    </div>
-                  </div>
-                  <div className="col-md-6">
-                    <div className="p-3 bg-light rounded">
-                      <div className="text-muted small">Driver Phone</div>
-                      <div className="fw-semibold">{d.driver_phone || '—'}</div>
-                    </div>
-                  </div>
-                  <div className="col-md-6">
-                    <div className="p-3 bg-light rounded">
-                      <div className="text-muted small">Bilty Number</div>
-                      <div className="fw-semibold">{d.bilty_number || '—'}</div>
-                    </div>
-                  </div>
-                  <div className="col-md-6">
-                    <div className="p-3 bg-light rounded">
-                      <div className="text-muted small">Actual Loading Location</div>
-                      <div className="fw-semibold">{d.actual_loading_location_code || '—'}</div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Receipt Image */}
-                {d.image_url && (
-                  <div className="mb-4">
-                    <h6 className="fw-bold text-muted mb-3 text-uppercase small">📸 Dispatch Receipt</h6>
-                    <div className="p-3 bg-light rounded">
-                      <div className="text-center mb-3">
-                        <img src={d.image_url} alt="Dispatch Receipt" style={{maxWidth: '100%', maxHeight: '300px', borderRadius: '8px'}} />
-                      </div>
-                      <div className="text-muted small">
-                        {d.image_uploaded_at && <div>Uploaded: {formatDateTime(d.image_uploaded_at)}</div>}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
+            {/* Dispatch Information (per-shipment) */}
+            <h6 className="fw-bold text-muted mb-3 text-uppercase small">Dispatch Information</h6>
+            {loadingDispatchItems ? (
+              <div className="text-center text-muted py-3">
+                <span className="spinner-border spinner-border-sm me-2"></span>Loading…
+              </div>
+            ) : dispatchItems.length === 0 ? (
               <div className="alert alert-info mb-0">
                 <strong>No dispatch yet.</strong> Order is awaiting dispatch.
+              </div>
+            ) : (
+              <div className="table-responsive mb-4">
+                <table className="table table-sm table-bordered mb-0" style={{ fontSize: '.85rem' }}>
+                  <thead className="table-light">
+                    <tr>
+                      <th className="text-center">Bags</th>
+                      <th className="text-center">Qty (MT)</th>
+                      <th>Driver</th>
+                      <th>Vehicle</th>
+                      <th>Bilty</th>
+                      <th>Date</th>
+                      <th className="text-center">Receipt</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dispatchItems.map((item, idx) => (
+                      <tr key={idx}>
+                        <td className="text-center">{item.dispatch_bags}</td>
+                        <td className="text-center">{item.dispatch_quantity ? parseFloat(item.dispatch_quantity).toFixed(3) : '—'}</td>
+                        <td>{item.dispatch_driver_name || '—'}</td>
+                        <td>{item.dispatch_vehicle_number || '—'}</td>
+                        <td>{item.dispatch_bilty_number || '—'}</td>
+                        <td>{item.created_at ? formatDateTime(item.created_at) : '—'}</td>
+                        <td className="text-center">
+                          {item.dispatch_receipt_image_url ? (
+                            <button type="button" className="btn btn-sm btn-outline-primary py-0 px-1" style={{ fontSize: '.72rem' }}
+                              onClick={() => setPreviewUrl(item.dispatch_receipt_image_url)} title="View receipt">🧾 View</button>
+                          ) : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
@@ -317,6 +348,7 @@ function ViewOrderModal({ order, onClose }) {
           </div>
         </div>
       </div>
+      <ReceiptPreviewModal url={previewUrl} onClose={() => setPreviewUrl(null)} />
     </div>
   );
 }

@@ -27,13 +27,34 @@
 /* ── Base ─────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
+html, body {
+  /* Prevent any element from forcing horizontal scroll / card trimming */
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   background: var(--bg);
   color: var(--text);
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   font-size: 14px;
   line-height: 1.5;
+  /* Sticky-footer layout: body is a full-height flex column */
   min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  /* Avoid double-tap zoom delays on mobile while keeping normal scrolling */
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Main content grows to fill the viewport so the footer is pushed to the bottom */
+main.page-main {
+  flex: 1 0 auto;
+}
+footer {
+  flex-shrink: 0;
 }
 
 /* Font Standardization */
@@ -400,4 +421,69 @@ a:hover { color: var(--amber); }
 .text-amber { color: var(--amber) !important; }
 .fw-600 { font-weight: 600; }
 .rounded-lg { border-radius: var(--radius) !important; }
+
+/* ═══════════════════════════════════════════════════════════
+   Layout hardening — overflow, modals, responsiveness
+   ═══════════════════════════════════════════════════════════ */
+
+/* Media never forces horizontal overflow */
+img, svg, video, canvas { max-width: 100%; height: auto; }
+
+/* Cards must stay inside their column and not bleed off-screen */
+.card { max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
+
+/* Wide tables always scroll inside their own container instead of the page */
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Give the content area a minimum height so loading states don't pull the
+   footer up into the middle of the screen */
+main.page-main { min-height: 60vh; }
+
+/* ── Popups: lock the page behind any open modal ──────────────
+   The app uses custom React modals rendered as `.modal.d-block`
+   (not Bootstrap-managed), so the body scroll was never locked.
+   `body.modal-lock` is toggled by JS (footer partial) for reliable
+   touch support on all devices; the `:has()` rules are a
+   progressive-enhancement fallback for browsers without JS timing. */
+body.modal-lock,
+html:has(.modal.d-block),
+body:has(.modal.d-block) {
+  overflow: hidden;
+}
+
+/* The modal overlay scrolls internally and never chains scroll to the page */
+.modal.d-block {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain; /* key: prevents touch scroll-chaining to body */
+}
+.modal.d-block .modal-body {
+  overscroll-behavior: contain;
+}
+
+/* ── Mobile tuning ───────────────────────────────────────── */
+@media (max-width: 575.98px) {
+  .page-main { padding: 1rem 0 2rem; }
+
+  /* Comfortable gutters so cards/tables don't touch the screen edge */
+  .container { padding-left: 14px; padding-right: 14px; }
+
+  /* Dashboard quick-link cards: equal height, no clipped text */
+  .dash-card .card-body { padding: 1rem !important; }
+  .dash-card .card-icon { width: 40px; height: 40px; font-size: 1.2rem; }
+
+  /* Centred modals get small side margins and a capped, scrollable height */
+  .modal-dialog { margin: 0.5rem; }
+  .modal-dialog-centered { min-height: calc(100% - 1rem); }
+  .modal-content { max-height: 94vh; }
+  .modal-body { overflow-y: auto; }
+
+  /* Welcome banner shrinks gracefully */
+  .welcome-banner { padding: 1.1rem 1.15rem; }
+  .welcome-banner .avatar-circle { width: 44px; height: 44px; font-size: 1.3rem; }
+}
 

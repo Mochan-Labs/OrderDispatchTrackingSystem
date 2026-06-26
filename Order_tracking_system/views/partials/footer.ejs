@@ -8,6 +8,30 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Lock background scroll whenever a custom React popup (.modal.d-block) is open.
+         Works on touch devices and does not depend on CSS :has() support. -->
+    <script>
+    (function () {
+      var scheduled = false;
+      function sync() {
+        scheduled = false;
+        var open = !!document.querySelector('.modal.d-block');
+        document.body.classList.toggle('modal-lock', open);
+      }
+      function schedule() {
+        if (scheduled) return;
+        scheduled = true;
+        (window.requestAnimationFrame || window.setTimeout)(sync, 0);
+      }
+      try {
+        var mo = new MutationObserver(schedule);
+        mo.observe(document.documentElement, { childList: true, subtree: true });
+      } catch (e) { /* MutationObserver unsupported — :has() fallback still applies */ }
+      document.addEventListener('DOMContentLoaded', schedule);
+      schedule();
+    })();
+    </script>
     <% if (typeof user !== 'undefined' && user && (user.role === 'ADMIN' || user.role === 'OFFICE_EXECUTIVE')) { %>
     <script>
     (function () {
