@@ -476,11 +476,13 @@ body:has(.modal.d-block) {
   .dash-card .card-body { padding: 1rem !important; }
   .dash-card .card-icon { width: 40px; height: 40px; font-size: 1.2rem; }
 
-  /* Centred modals get small side margins and a capped, scrollable height */
+  /* Popups: small side margins, and let the whole overlay scroll from the
+     top. Vertically-centering tall forms (e.g. inward stock entry) clipped
+     their top/bottom on small screens and trapped the scroll — especially
+     for modals whose body is wrapped in a <form>. Aligning to the top lets
+     `.modal.d-block { overflow-y:auto }` scroll the entire popup. */
   .modal-dialog { margin: 0.5rem; }
-  .modal-dialog-centered { min-height: calc(100% - 1rem); }
-  .modal-content { max-height: 94vh; }
-  .modal-body { overflow-y: auto; }
+  .modal-dialog-centered { align-items: flex-start; min-height: calc(100% - 1rem); }
 
   /* Welcome banner shrinks gracefully */
   .welcome-banner { padding: 1.1rem 1.15rem; }
