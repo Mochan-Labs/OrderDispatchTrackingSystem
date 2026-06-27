@@ -424,7 +424,22 @@ router.post('/signup', ensureAdminOrOfficeExecutive, async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    return renderSignup(req, res, { error: 'Server error', formData });
+    let errorMsg = 'Server error';
+
+    // Handle specific database constraint errors
+    if (err.code === '23505') { // Unique constraint violation
+      if (err.detail && err.detail.includes('user_phone')) {
+        errorMsg = 'Phone number already exists. Please use a different phone number.';
+      } else if (err.detail && err.detail.includes('user_login_name')) {
+        errorMsg = 'Login name already exists. Please use a different login name.';
+      } else if (err.detail && err.detail.includes('user_email')) {
+        errorMsg = 'Email already exists. Please use a different email.';
+      } else {
+        errorMsg = 'This record already exists. Please check the entered data.';
+      }
+    }
+
+    return renderSignup(req, res, { error: errorMsg, formData });
   }
 });
 

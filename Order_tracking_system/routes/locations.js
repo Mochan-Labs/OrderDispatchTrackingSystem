@@ -17,6 +17,11 @@ router.get('/master/locations', ensureAuth, (req, res) => {
   res.render('master/locations', { user: req.session.user });
 });
 
+router.get('/master/warehouse', ensureAuth, (req, res) => {
+  if (req.session.user.role !== 'ADMIN') return res.status(403).send('Access denied. Admin only.');
+  res.render('master/warehouse', { user: req.session.user });
+});
+
 router.get('/api/warehouses', ensureAdmin, async (req, res) => {
   try {
     const r = await pool.query(`

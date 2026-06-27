@@ -84,9 +84,6 @@
 
             <% if (typeof user !== 'undefined' && user && user.role === 'ADMIN') { %>
             <li class="nav-item">
-              <a class="nav-link" href="/orders">📊 Orders &amp; Dispatch</a>
-            </li>
-            <li class="nav-item">
               <a class="nav-link" href="/notifications">📱 WhatsApp Notifications</a>
             </li>
             <li class="nav-item dropdown">
@@ -98,8 +95,9 @@
                 <li><a class="dropdown-item" href="/sales/report">📈 Sales Report</a></li>
                 <li><a class="dropdown-item" href="/master/products">📦 Products</a></li>
                 <li><a class="dropdown-item" href="/master/dealers">🏢 Dealers</a></li>
-                <li><a class="dropdown-item" href="/master/code-reference">📍 Locations</a></li>
+                <li><a class="dropdown-item" href="/master/warehouse">🏭 Warehouse</a></li>
                 <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="/master/code-reference">⚙️ Configuration</a></li>
                 <li><a class="dropdown-item" href="/master/users">👥 Login Users</a></li>
                 <li><a class="dropdown-item" href="/master/user-roles">🔑 User Roles</a></li>
                 <li><hr class="dropdown-divider"></li>
