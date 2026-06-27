@@ -78,6 +78,7 @@ router.get('/api/warehouse-stock', ensureAdminOrStockManagerOrDispatcher, async 
         ws.warehouse_receipt_image_url,
         ws.warehouse_receipt_image_type,
         ws.warehouse_stock_notes,
+        ws.is_dispatch_out,
         ws.created_at,
         ws.updated_at,
         wm.warehouse_name,

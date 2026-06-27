@@ -812,6 +812,34 @@ router.post('/api/orders/:orderId/dispatch-items', ensureAuth, async (req, res) 
       ];
 
       const result = await client.query(insertQuery, insertParams);
+      const dispatchItem = result.rows[0];
+
+      // Auto-create warehouse_stock entry for dispatch (marks as 'out')
+      const stockResult = await client.query(`
+        INSERT INTO odts.warehouse_stock (
+          warehouse_id, warehouse_stock_date, warehouse_vehicle_number,
+          warehouse_driver_name, warehouse_driver_phone, warehouse_bilty_number,
+          warehouse_stock_notes, is_dispatch_out, created_by, updated_by
+        ) VALUES ($1, NOW(), $2, $3, $4, $5, $6, TRUE, $7, $7)
+        RETURNING warehouse_stock_id
+      `, [
+        dispatch_warehouse_id ? parseInt(dispatch_warehouse_id) : null,
+        dispatch_vehicle_number,
+        dispatch_driver_name,
+        dispatch_driver_phone,
+        dispatch_bilty_number,
+        `Dispatch Item #${dispatchItem.dispatch_items_id} - Order #${orderId}`,
+        req.session.user.id
+      ]);
+
+      if (stockResult.rows.length > 0) {
+        const warehouse_stock_id = stockResult.rows[0].warehouse_stock_id;
+        // Create warehouse_stock_items entry
+        await client.query(`
+          INSERT INTO odts.warehouse_stock_items (warehouse_stock_id, warehouse_product_id, warehouse_product_qty, created_by, updated_by)
+          VALUES ($1, $2, $3, $4, $4)
+        `, [warehouse_stock_id, product_id ? parseInt(product_id) : null, dispatch_bags, req.session.user.id]);
+      }
 
       await client.query('COMMIT');
 

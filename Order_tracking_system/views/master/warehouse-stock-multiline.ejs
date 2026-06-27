@@ -303,6 +303,7 @@ function WarehouseStockApp() {
           'Driver': stock.warehouse_driver_name || '—',
           'Phone': stock.warehouse_driver_phone || '—',
           'Bilty': stock.warehouse_bilty_number || '—',
+          'Stock': stock.is_dispatch_out ? 'out' : 'in',
           'Product': '—',
           'Qty': '—',
           'Notes': stock.warehouse_stock_notes || '—',
@@ -315,6 +316,7 @@ function WarehouseStockApp() {
         'Driver': stock.warehouse_driver_name || '—',
         'Phone': stock.warehouse_driver_phone || '—',
         'Bilty': stock.warehouse_bilty_number || '—',
+        'Stock': stock.is_dispatch_out ? 'out' : 'in',
         'Product': item.product_name || '—',
         'Qty': item.qty || 0,
         'Notes': stock.warehouse_stock_notes || '—',
@@ -376,7 +378,7 @@ function WarehouseStockApp() {
             <h6 className="mb-3 fw-semibold">Real-Time Inventory</h6>
 
             <div className="row g-2 mb-3">
-              <div className="col-md-3">
+              <div className="col-md-4">
                 <label className="form-label fw-semibold small mb-1">Warehouse</label>
                 <select
                   className="form-select form-select-sm"
@@ -390,7 +392,7 @@ function WarehouseStockApp() {
                   ))}
                 </select>
               </div>
-              <div className="col-md-3">
+              <div className="col-md-4">
                 <label className="form-label fw-semibold small mb-1">🔍 Search</label>
                 <input
                   type="text"
@@ -400,25 +402,7 @@ function WarehouseStockApp() {
                   onChange={(e) => setSearchTerm1(e.target.value)}
                 />
               </div>
-              <div className="col-md-2">
-                <label className="form-label fw-semibold small mb-1">From</label>
-                <input
-                  type="date"
-                  className="form-control form-control-sm"
-                  value={startDate1}
-                  onChange={(e) => setStartDate1(e.target.value)}
-                />
-              </div>
-              <div className="col-md-2">
-                <label className="form-label fw-semibold small mb-1">To</label>
-                <input
-                  type="date"
-                  className="form-control form-control-sm"
-                  value={endDate1}
-                  onChange={(e) => setEndDate1(e.target.value)}
-                />
-              </div>
-              <div className="col-md-2 d-flex align-items-end">
+              <div className="col-md-4 d-flex align-items-end">
                 <button className="btn btn-outline-success btn-sm w-100" onClick={exportInventoryExcel}>
                   ⬇️ Download
                 </button>
@@ -471,7 +455,7 @@ function WarehouseStockApp() {
       {/* PART 2: STOCK ENTRIES HISTORY (warehouse_stock + warehouse_stock_items) */}
       {/* ════════════════════════════════════════════════════════════════ */}
       <div>
-        <h4 className="fw-semibold mb-3">📦 Part 2: Stock Entries History</h4>
+        <h4 className="fw-semibold mb-3">📦 Part 2: Stock History</h4>
 
         <div className="card shadow-sm">
           <div className="card-header bg-white py-3">
@@ -641,6 +625,7 @@ function WarehouseStockApp() {
                       <th>Warehouse</th>
                       <th>Vehicle</th>
                       <th>Driver</th>
+                      <th style={{width:'70px'}} className="text-center">Stock</th>
                       <th>Product</th>
                       <th style={{width:'80px'}} className="text-center">Qty</th>
                       <th style={{width:'120px'}}>Date</th>
@@ -654,7 +639,8 @@ function WarehouseStockApp() {
                           <td className="small fw-semibold">{stock.warehouse_name || '—'}</td>
                           <td className="small">{stock.warehouse_vehicle_number || '—'}</td>
                           <td className="small">{stock.warehouse_driver_name || '—'}</td>
-                          <td colSpan="2" className="small text-muted">—</td>
+                          <td className="text-center"><span className="badge bg-success">in</span></td>
+                          <td colSpan="1" className="small text-muted">—</td>
                           <td className="small">{stock.warehouse_stock_date ? new Date(stock.warehouse_stock_date).toLocaleDateString() : '—'}</td>
                           <td className="small">
                             {stock.warehouse_receipt_image_url ? (
@@ -669,6 +655,7 @@ function WarehouseStockApp() {
                             <td className="small fw-semibold">{stock.warehouse_name || '—'}</td>
                             <td className="small">{stock.warehouse_vehicle_number || '—'}</td>
                             <td className="small">{stock.warehouse_driver_name || '—'}</td>
+                            <td className="text-center"><span className={`badge ${stock.is_dispatch_out ? 'bg-danger' : 'bg-success'}`}>{stock.is_dispatch_out ? 'out' : 'in'}</span></td>
                             <td className="small">{item.product_name || '—'}</td>
                             <td className="text-center fw-semibold">{item.qty}</td>
                             <td className="small">{stock.warehouse_stock_date ? new Date(stock.warehouse_stock_date).toLocaleDateString() : '—'}</td>
