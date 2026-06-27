@@ -639,7 +639,7 @@ function WarehouseStockApp() {
                           <td className="small fw-semibold">{stock.warehouse_name || '—'}</td>
                           <td className="small">{stock.warehouse_vehicle_number || '—'}</td>
                           <td className="small">{stock.warehouse_driver_name || '—'}</td>
-                          <td className="text-center"><span className="badge bg-success">in</span></td>
+                          <td className="text-center"><span className={`badge ${stock.is_dispatch_out ? 'bg-danger' : 'bg-success'}`}>{stock.is_dispatch_out ? 'out' : 'in'}</span></td>
                           <td colSpan="1" className="small text-muted">—</td>
                           <td className="small">{stock.warehouse_stock_date ? new Date(stock.warehouse_stock_date).toLocaleDateString() : '—'}</td>
                           <td className="small">
