@@ -1667,24 +1667,20 @@ function DealerOrdersModal({ orders, dealerId, onClose, onBack, onAccept, onDisp
                                     <button className="btn btn-sm btn-outline-primary" title="View order" onClick={() => onView(order)}>
                                       👁️
                                     </button>
-                                    {!readOnlyMode && (
-                                      <>
-                                        {order.order_status === 'ORDER_PLACED' && (
-                                          <button
-                                            className="btn btn-sm btn-outline-info"
-                                            title="Accept order"
-                                            disabled={accepting[order.order_id]}
-                                            onClick={() => handleAccept(order.order_id)}
-                                          >
-                                            {accepting[order.order_id] ? '...' : '✅'}
-                                          </button>
-                                        )}
-                                        {order.order_status === 'ACCEPTED' && (
-                                          <button className="btn btn-sm btn-success" title="Dispatch order" onClick={() => onDispatch(order)}>
-                                            🚛
-                                          </button>
-                                        )}
-                                      </>
+                                    {order.order_status === 'ORDER_PLACED' && (
+                                      <button
+                                        className="btn btn-sm btn-outline-info"
+                                        title="Accept order"
+                                        disabled={accepting[order.order_id]}
+                                        onClick={() => handleAccept(order.order_id)}
+                                      >
+                                        {accepting[order.order_id] ? '...' : '✅'}
+                                      </button>
+                                    )}
+                                    {order.order_status === 'ACCEPTED' && (
+                                      <button className="btn btn-sm btn-success" title="Dispatch order" onClick={() => onDispatch(order)}>
+                                        🚛
+                                      </button>
                                     )}
                                   </div>
                                 </td>
@@ -1717,24 +1713,20 @@ function DealerOrdersModal({ orders, dealerId, onClose, onBack, onAccept, onDisp
                             <button className="btn btn-sm btn-outline-primary" title="View order" onClick={() => onView(order)}>
                               👁️
                             </button>
-                            {!readOnlyMode && (
-                              <>
-                                {order.order_status === 'ORDER_PLACED' && (
-                                  <button
-                                    className="btn btn-sm btn-outline-info"
-                                    title="Accept order"
-                                    disabled={accepting[order.order_id]}
-                                    onClick={() => handleAccept(order.order_id)}
-                                  >
-                                    {accepting[order.order_id] ? '...' : '✅'}
-                                  </button>
-                                )}
-                                {order.order_status === 'ACCEPTED' && (
-                                  <button className="btn btn-sm btn-success" title="Dispatch order" onClick={() => onDispatch(order)}>
-                                    🚛
-                                  </button>
-                                )}
-                              </>
+                            {order.order_status === 'ORDER_PLACED' && (
+                              <button
+                                className="btn btn-sm btn-outline-info"
+                                title="Accept order"
+                                disabled={accepting[order.order_id]}
+                                onClick={() => handleAccept(order.order_id)}
+                              >
+                                {accepting[order.order_id] ? '...' : '✅'}
+                              </button>
+                            )}
+                            {order.order_status === 'ACCEPTED' && (
+                              <button className="btn btn-sm btn-success" title="Dispatch order" onClick={() => onDispatch(order)}>
+                                🚛
+                              </button>
                             )}
                           </div>
                         </td>
@@ -1864,23 +1856,17 @@ function DealerDispatchedOrdersModal({ orders, dealerId, onClose, onBack, onView
                           )}
                         </div>
                       </div>
-                      <div className="col-12 col-sm-8">
-                        <div className="text-muted">Products</div>
-                        <div>
-                          {(() => {
-                            const items = parseItems(order);
-                            if (items.length === 0) return <span className="text-muted">—</span>;
-                            return (
-                              <div>
-                                {items.map((item, idx) => (
-                                  <div key={idx} className="fw-semibold">
-                                    {item.product_name || '—'} ({item.order_bags || 0} bags, {parseFloat(item.order_quantity || 0).toFixed(3)} MT)
-                                  </div>
-                                ))}
-                              </div>
-                            );
-                          })()}
-                        </div>
+                      <div className="col-6 col-sm-3">
+                        <div className="text-muted">Product</div>
+                        <div className="fw-semibold">{parseItems(order)[0]?.product_name || '—'}</div>
+                      </div>
+                      <div className="col-6 col-sm-2">
+                        <div className="text-muted">Qty (MT)</div>
+                        <div className="fw-semibold">{(() => {
+                          const items = parseItems(order);
+                          const total = items.reduce((s, i) => s + parseFloat(i.order_quantity || 0), 0);
+                          return total > 0 ? total.toFixed(3) : order.order_quantity || '—';
+                        })()}</div>
                       </div>
                       <div className="col-6 col-sm-3">
                         <div className="text-muted">Bilty No.</div>
@@ -1894,7 +1880,7 @@ function DealerDispatchedOrdersModal({ orders, dealerId, onClose, onBack, onView
                           👁️ View
                         </button>
                       )}
-                      {!readOnlyMode && onDispatch && ['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD'].includes(order.order_status) && (
+                      {onDispatch && ['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD'].includes(order.order_status) && (
                         <button className="btn btn-sm btn-warning me-1" onClick={() => onDispatch(order)}>
                           ✏️ Edit Dispatch
                         </button>
@@ -2069,39 +2055,21 @@ function OverdueOrdersModal({ orders, dealerId, onClose, onBack, onView, onAccep
                     </div>
                     <div className="row g-2 small mb-2">
                       <div className="col-6">
-                        <div className="text-muted">Products</div>
-                        <div>
-                          {(() => {
-                            const items = parseItems(o);
-                            if (items.length === 0) return <span className="text-muted">—</span>;
-                            return (
-                              <div>
-                                {items.map((item, idx) => (
-                                  <div key={idx}>
-                                    {item.product_name || '—'} ({item.order_bags || 0} bags, {parseFloat(item.order_quantity || 0).toFixed(3)} MT)
-                                  </div>
-                                ))}
-                              </div>
-                            );
-                          })()}
-                        </div>
+                        <div className="text-muted">Product</div>
+                        <div>{o.product_name || '—'}</div>
                       </div>
                       <div className="col-6">
                         <div className="text-muted">Party</div>
-                        <div>{o.party_company_name || o.party_name_col || o.party_name || '—'}</div>
+                        <div>{o.party_name_col || '—'}</div>
                       </div>
                     </div>
                     <div className="d-flex gap-2 flex-wrap">
                       <button className="btn btn-sm btn-outline-primary" onClick={() => onView(o)}>👁️ View</button>
-                      {!readOnlyMode && (
-                        <>
-                          {o.order_status === 'ORDER_PLACED' && (
-                            <button className="btn btn-sm btn-outline-info" onClick={() => onAccept(o.order_id)}>✅ Accept</button>
-                          )}
-                          {o.order_status === 'ACCEPTED' && (
-                            <button className="btn btn-sm btn-success" onClick={() => onDispatch(o)}>🚛 Dispatch</button>
-                          )}
-                        </>
+                      {o.order_status === 'ORDER_PLACED' && (
+                        <button className="btn btn-sm btn-outline-info" onClick={() => onAccept(o.order_id)}>✅ Accept</button>
+                      )}
+                      {o.order_status === 'ACCEPTED' && (
+                        <button className="btn btn-sm btn-success" onClick={() => onDispatch(o)}>🚛 Dispatch</button>
                       )}
                     </div>
                   </div>
@@ -2182,39 +2150,21 @@ function TotalOrdersListModal({ orders, onClose, onView, onAccept, onDispatch })
                     </div>
                     <div className="row g-2 small mb-2">
                       <div className="col-6">
-                        <div className="text-muted">Products</div>
-                        <div>
-                          {(() => {
-                            const items = parseItems(o);
-                            if (items.length === 0) return <span className="text-muted">—</span>;
-                            return (
-                              <div>
-                                {items.map((item, idx) => (
-                                  <div key={idx}>
-                                    {item.product_name || '—'} ({item.order_bags || 0} bags, {parseFloat(item.order_quantity || 0).toFixed(3)} MT)
-                                  </div>
-                                ))}
-                              </div>
-                            );
-                          })()}
-                        </div>
+                        <div className="text-muted">Product</div>
+                        <div>{o.product_name || '—'}</div>
                       </div>
                       <div className="col-6">
                         <div className="text-muted">Party</div>
-                        <div>{o.party_company_name || o.party_name_col || o.party_name || '—'}</div>
+                        <div>{o.party_name_col || '—'}</div>
                       </div>
                     </div>
                     <div className="d-flex gap-2 flex-wrap">
                       <button className="btn btn-sm btn-outline-primary" onClick={() => onView(o)}>👁️ View</button>
-                      {!readOnlyMode && (
-                        <>
-                          {o.order_status === 'ORDER_PLACED' && (
-                            <button className="btn btn-sm btn-outline-info" onClick={() => onAccept(o.order_id)}>✅ Accept</button>
-                          )}
-                          {o.order_status === 'ACCEPTED' && (
-                            <button className="btn btn-sm btn-success" onClick={() => onDispatch(o)}>🚛 Dispatch</button>
-                          )}
-                        </>
+                      {o.order_status === 'ORDER_PLACED' && (
+                        <button className="btn btn-sm btn-outline-info" onClick={() => onAccept(o.order_id)}>✅ Accept</button>
+                      )}
+                      {o.order_status === 'ACCEPTED' && (
+                        <button className="btn btn-sm btn-success" onClick={() => onDispatch(o)}>🚛 Dispatch</button>
                       )}
                     </div>
                   </div>
@@ -2284,24 +2234,20 @@ function TotalDealerOrdersModal({ orders, dealerId, onClose, onBack, onView, onA
                       <button className="btn btn-sm btn-outline-primary" onClick={() => onView(order)}>
                         👁️ View
                       </button>
-                      {!readOnlyMode && (
-                        <>
-                          {order.order_status === 'ORDER_PLACED' && (
-                            <button className="btn btn-sm btn-outline-info" onClick={() => onAccept(order.order_id)}>
-                              ✅ Accept
-                            </button>
-                          )}
-                          {order.order_status === 'ACCEPTED' && (
-                            <button className="btn btn-sm btn-success" onClick={() => onDispatch(order)}>
-                              🚛 Dispatch
-                            </button>
-                          )}
-                          {['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD'].includes(order.order_status) && (
-                            <button className="btn btn-sm btn-warning" onClick={() => onDispatch(order)}>
-                              ✏️ Edit Dispatch
-                            </button>
-                          )}
-                        </>
+                      {order.order_status === 'ORDER_PLACED' && (
+                        <button className="btn btn-sm btn-outline-info" onClick={() => onAccept(order.order_id)}>
+                          ✅ Accept
+                        </button>
+                      )}
+                      {order.order_status === 'ACCEPTED' && (
+                        <button className="btn btn-sm btn-success" onClick={() => onDispatch(order)}>
+                          🚛 Dispatch
+                        </button>
+                      )}
+                      {['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD'].includes(order.order_status) && (
+                        <button className="btn btn-sm btn-warning" onClick={() => onDispatch(order)}>
+                          ✏️ Edit Dispatch
+                        </button>
                       )}
                     </div>
                   </div>
@@ -2558,7 +2504,6 @@ function App() {
   }, [fetchOrders]);
 
   const handleAccept = async (orderId) => {
-    if (readOnlyMode) return; // Prevent action in read-only mode
     const r = await fetch(`/api/dispatcher/orders/${orderId}/accept`, { method: 'POST' });
     if (r.ok) {
       notify(`Order #${orderId} accepted`);
@@ -2570,7 +2515,6 @@ function App() {
   };
 
   const handleDispatch = async (orderId, form) => {
-    if (readOnlyMode) return; // Prevent action in read-only mode
     const r = await fetch(`/api/dispatcher/orders/${orderId}/dispatch`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },

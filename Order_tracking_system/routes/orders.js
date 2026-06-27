@@ -422,7 +422,8 @@ router.get('/admin/dispatch-orders', ensureAdmin, (req, res) => {
     user: req.session.user,
     defaultStartDate: startDate,
     defaultEndDate: endDate,
-    isAdminDispatchOrders: true
+    isAdminDispatchOrders: true,
+    readOnlyMode: false
   });
 });
 
@@ -431,7 +432,16 @@ router.get('/office/dashboard', ensureAdminOrOfficeExecutive, (req, res) => {
 });
 
 router.get('/sales/dashboard', ensureSalesOfficer, (req, res) => {
-  res.render('sales/dashboard', { user: req.session.user });
+  const defaultStartDate = new Date();
+  defaultStartDate.setDate(defaultStartDate.getDate() - 3); // Last 3 days
+  const startDate = req.query.startDate || defaultStartDate.toISOString().split('T')[0];
+  const endDate = req.query.endDate || new Date().toISOString().split('T')[0];
+  res.render('dispatcher/dashboard', {
+    user: req.session.user,
+    defaultStartDate: startDate,
+    defaultEndDate: endDate,
+    readOnlyMode: true
+  });
 });
 
 router.get('/sales/report', ensureSalesOfficer, (req, res) => {

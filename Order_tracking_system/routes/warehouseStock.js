@@ -36,9 +36,9 @@ function ensureAdminOrStockManagerOrDispatcher(req, res, next) {
     return res.redirect('/signin');
   }
   const role = req.session.user.role;
-  if (role !== 'ADMIN' && role !== 'STOCK_MANAGER' && role !== 'DISPATCHER') {
-    if (req.path.startsWith('/api/')) return res.status(403).json({ error: 'Admin, Stock Manager, or Dispatcher only' });
-    return res.status(403).send('Admin, Stock Manager, or Dispatcher only');
+  if (role !== 'ADMIN' && role !== 'STOCK_MANAGER' && role !== 'DISPATCHER' && role !== 'SALES_OFFICER') {
+    if (req.path.startsWith('/api/')) return res.status(403).json({ error: 'Access denied' });
+    return res.status(403).send('Access denied');
   }
   return next();
 }

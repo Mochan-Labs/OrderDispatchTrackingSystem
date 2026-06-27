@@ -117,11 +117,9 @@ function App(){
               <th style={{cursor:'pointer'}} onClick={()=>sort('role_name')}>Role<SI col="role_name"/></th>
               <th style={{width:'90px',textAlign:'center'}}>Status</th>
               <th style={{width:'90px',textAlign:'center'}}>Locked</th>
-              <th style={{cursor:'pointer', width:'160px'}} onClick={()=>sort('updated_at')}>Updated At<SI col="updated_at"/></th>
-              <th style={{cursor:'pointer', width:'160px'}} onClick={()=>sort('updated_by')}>Updated By<SI col="updated_by"/></th>
               <th style={{width:'90px',textAlign:'center'}}>Action</th>
             </tr></thead>
-            <tbody>{filtered.length===0?<tr><td colSpan="11" className="text-center text-muted py-4">No users found</td></tr>:
+            <tbody>{filtered.length===0?<tr><td colSpan="9" className="text-center text-muted py-4">No users found</td></tr>:
               filtered.map(r=><tr key={r.user_id}>
                 <td><span className="badge bg-primary">{r.user_login_name||'—'}</span></td>
                 <td>{r.display_name||<span className="text-muted">—</span>}</td>
@@ -131,8 +129,6 @@ function App(){
                 <td><span className="badge bg-info text-dark">{r.role_name||'—'}</span></td>
                 <td className="text-center">{r.user_is_active_flag?<span className="badge bg-success">Active</span>:<span className="badge bg-secondary">Inactive</span>}</td>
                 <td className="text-center">{r.user_is_locked_flag?<span className="badge bg-danger">Locked</span>:<span className="badge bg-success">No</span>}</td>
-                <td>{r.updated_at?new Date(r.updated_at).toLocaleDateString():<span className="text-muted">—</span>}</td>
-                <td>{r.updated_by_user_login_name||<span className="text-muted">—</span>}</td>
                 <td className="text-center"><button className="btn btn-outline-primary btn-sm" onClick={()=>openEdit(r)}>Edit</button></td>
               </tr>)
             }</tbody>

@@ -529,6 +529,57 @@ router.get('/logout', async (req, res) => {
   req.session.destroy(() => res.redirect('/signin'));
 });
 
+// Change password endpoint
+router.post('/api/change-password', ensureAuthenticated, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.session.user.id;
+
+    // Validate input
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current and new password are required' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+
+    // Fetch user from database
+    const userResult = await pool.query(
+      'SELECT user_id, password_hash FROM odts.user_master WHERE user_id = $1',
+      [userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = userResult.rows[0];
+
+    // Verify current password
+    const bcrypt = require('bcrypt');
+    const isPasswordValid = await bcrypt.compare(currentPassword, user.password_hash);
+
+    if (!isPasswordValid) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+
+    // Hash new password
+    const newPasswordHash = await bcrypt.hash(newPassword, 10);
+
+    // Update password in database
+    await pool.query(
+      'UPDATE odts.user_master SET password_hash = $1, updated_at = NOW(), updated_by = $2 WHERE user_id = $3',
+      [newPasswordHash, userId, userId]
+    );
+
+    res.json({ success: true, message: 'Password changed successfully' });
+  } catch (e) {
+    console.error('Error changing password:', e);
+    res.status(500).json({ error: 'Failed to change password' });
+  }
+});
+
 router.get('/dashboard', ensureAuthenticated, (req, res) => {
   const userRole = req.session.user.role;
 

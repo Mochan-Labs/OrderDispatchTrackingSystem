@@ -46,7 +46,7 @@ function App(){
 
   const openAdd=()=>{setForm(EMPTY);setEditId(null);setShowModal(true);};
   const exportExcel=()=>{
-    const data=filtered.map(r=>({'ID':r.warehouse_id,'Code':r.warehouse_code,'Name':r.warehouse_name,'Type':r.warehouse_type,'UI Label':r.warehouse_ui_label||'','Order':r.warehouse_ui_order,'Created At':r.created_at?new Date(r.created_at).toLocaleDateString():''}) );
+    const data=filtered.map(r=>({'ID':r.warehouse_id,'Code':r.warehouse_code,'Name':r.warehouse_name,'Type':r.warehouse_type,'UI Label':r.warehouse_ui_label||'','Order':r.warehouse_ui_order,'Updated At':r.updated_at?new Date(r.updated_at).toLocaleDateString():'','Updated By':r.updated_by||''}) );
     const ws=XLSX.utils.json_to_sheet(data); const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,'Warehouse'); XLSX.writeFile(wb,'Warehouse.xlsx');
   };

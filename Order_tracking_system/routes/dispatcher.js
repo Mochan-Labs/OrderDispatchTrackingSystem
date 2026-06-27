@@ -37,9 +37,9 @@ function ensureDispatcher(req, res, next) {
     return isApiRoute ? res.status(401).json({ error: 'Unauthorized' }) : res.redirect('/signin');
   }
   const role = req.session.user.role;
-  if (role !== 'DISPATCHER' && role !== 'ADMIN' && role !== 'OFFICE_EXECUTIVE') {
+  if (role !== 'DISPATCHER' && role !== 'ADMIN' && role !== 'OFFICE_EXECUTIVE' && role !== 'SALES_OFFICER') {
     const isApiRoute = req.path.startsWith('/api/');
-    return isApiRoute ? res.status(403).json({ error: 'Access denied. Dispatcher, Admin, or Office Executive only.' }) : res.status(403).send('Access denied. Dispatcher, Admin, or Office Executive only.');
+    return isApiRoute ? res.status(403).json({ error: 'Access denied.' }) : res.status(403).send('Access denied.');
   }
   return next();
 }
@@ -124,7 +124,7 @@ async function addPresignedUrlsToDispatchItems(items) {
 
 // Page route
 router.get('/dispatcher', ensureDispatcher, (req, res) => {
-  res.render('dispatcher/dashboard', { user: req.session.user });
+  res.render('dispatcher/dashboard', { user: req.session.user, readOnlyMode: false });
 });
 
 // GET orders grouped for dispatcher view

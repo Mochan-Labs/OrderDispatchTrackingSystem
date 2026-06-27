@@ -143,6 +143,7 @@
                   <li><span class="dropdown-item-text text-muted small"><%= user.user_login_name || user.username %></span></li>
                   <li><span class="dropdown-item-text text-muted small">⏱️ Auto logout after <%= sessionTimeoutHours %> hours of inactivity</span></li>
                   <li><hr class="dropdown-divider my-1"></li>
+                  <li><a class="dropdown-item" href="#" onclick="openChangePasswordModal(event)">🔐 Change Password</a></li>
                   <li><a class="dropdown-item text-danger fw-600" href="/logout">🚪 Sign out</a></li>
                 </ul>
               </li>
@@ -153,5 +154,130 @@
         </div>
       </div>
     </nav>
+
+    <!-- Change Password Modal -->
+    <div class="modal fade" id="changePasswordModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">🔐 Change Password</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div id="changePasswordAlert" class="alert" style="display:none;"></div>
+            <form id="changePasswordForm">
+              <div class="mb-3">
+                <label for="currentPassword" class="form-label fw-semibold">Current Password <span class="text-danger">*</span></label>
+                <input type="password" class="form-control" id="currentPassword" name="currentPassword" required>
+              </div>
+              <div class="mb-3">
+                <label for="newPassword" class="form-label fw-semibold">New Password <span class="text-danger">*</span></label>
+                <input type="password" class="form-control" id="newPassword" name="newPassword" required>
+                <small class="text-muted d-block mt-1">Minimum 6 characters</small>
+              </div>
+              <div class="mb-3">
+                <label for="confirmPassword" class="form-label fw-semibold">Confirm New Password <span class="text-danger">*</span></label>
+                <input type="password" class="form-control" id="confirmPassword" name="confirmPassword" required>
+              </div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-primary" id="changePasswordBtn" onclick="submitChangePassword()">
+              <span id="changePasswordBtnText">Change Password</span>
+              <span id="changePasswordBtnSpinner" class="spinner-border spinner-border-sm ms-2" style="display:none;"></span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function openChangePasswordModal(event) {
+        event.preventDefault();
+        document.getElementById('changePasswordForm').reset();
+        document.getElementById('changePasswordAlert').style.display = 'none';
+        const modal = new bootstrap.Modal(document.getElementById('changePasswordModal'));
+        modal.show();
+      }
+
+      async function submitChangePassword() {
+        const currentPassword = document.getElementById('currentPassword').value.trim();
+        const newPassword = document.getElementById('newPassword').value.trim();
+        const confirmPassword = document.getElementById('confirmPassword').value.trim();
+        const alertEl = document.getElementById('changePasswordAlert');
+
+        // Validation
+        if (!currentPassword || !newPassword || !confirmPassword) {
+          alertEl.className = 'alert alert-warning';
+          alertEl.textContent = 'All fields are required';
+          alertEl.style.display = 'block';
+          return;
+        }
+
+        if (newPassword.length < 6) {
+          alertEl.className = 'alert alert-warning';
+          alertEl.textContent = 'New password must be at least 6 characters';
+          alertEl.style.display = 'block';
+          return;
+        }
+
+        if (newPassword !== confirmPassword) {
+          alertEl.className = 'alert alert-warning';
+          alertEl.textContent = 'New passwords do not match';
+          alertEl.style.display = 'block';
+          return;
+        }
+
+        if (currentPassword === newPassword) {
+          alertEl.className = 'alert alert-warning';
+          alertEl.textContent = 'New password must be different from current password';
+          alertEl.style.display = 'block';
+          return;
+        }
+
+        // Submit
+        const btn = document.getElementById('changePasswordBtn');
+        const spinner = document.getElementById('changePasswordBtnSpinner');
+        const btnText = document.getElementById('changePasswordBtnText');
+        btn.disabled = true;
+        spinner.style.display = 'inline-block';
+        btnText.textContent = 'Changing...';
+
+        try {
+          const res = await fetch('/api/change-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              currentPassword,
+              newPassword
+            })
+          });
+
+          const data = await res.json();
+
+          if (res.ok) {
+            alertEl.className = 'alert alert-success';
+            alertEl.textContent = '✅ Password changed successfully!';
+            alertEl.style.display = 'block';
+            setTimeout(() => {
+              bootstrap.Modal.getInstance(document.getElementById('changePasswordModal')).hide();
+            }, 2000);
+          } else {
+            alertEl.className = 'alert alert-danger';
+            alertEl.textContent = data.error || 'Failed to change password';
+            alertEl.style.display = 'block';
+          }
+        } catch (e) {
+          alertEl.className = 'alert alert-danger';
+          alertEl.textContent = 'Error: ' + e.message;
+          alertEl.style.display = 'block';
+        } finally {
+          btn.disabled = false;
+          spinner.style.display = 'none';
+          btnText.textContent = 'Change Password';
+        }
+      }
+    </script>
 
     <main class="container page-main">
