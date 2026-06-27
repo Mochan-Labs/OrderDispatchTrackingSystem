@@ -1561,20 +1561,55 @@ function App() {
   };
 
   const exportExcel = () => {
-    const data = [];
+    // Sheet 1: Orders (from dealer_order_items)
+    const ordersData = [];
     filtered.forEach(o => {
-      // If order has dispatch items, export each dispatch item as a separate row with order/item info
+      if (o.items && o.items.length > 0) {
+        o.items.forEach(item => {
+          ordersData.push({
+            'Order Id': o.order_id,
+            'Dealer Name': o.dealer_name || '',
+            'Dealer Company Name': o.dealer_company_name || '',
+            'Product': item.product_name || '',
+            'Order Date': formatDateTime(o.order_date),
+            'Order Bags': item.order_bags || '',
+            'Order Qty': item.order_quantity || '',
+            'Delivery Location': o.party_address || o.delivery_location || '',
+            'Party': o.party_name || '',
+            'Address': o.party_address || '',
+            'Load Type': o.load_type_desc || '',
+            'Preferred Location': o.preferred_location_desc || '',
+          });
+        });
+      } else {
+        ordersData.push({
+          'Order Id': o.order_id,
+          'Dealer Name': o.dealer_name || '',
+          'Dealer Company Name': o.dealer_company_name || '',
+          'Product': o.product_name || '',
+          'Order Date': formatDateTime(o.order_date),
+          'Order Bags': '',
+          'Order Qty': '',
+          'Delivery Location': o.party_address || o.delivery_location || '',
+          'Party': o.party_name || '',
+          'Address': o.party_address || '',
+          'Load Type': o.load_type_desc || '',
+          'Preferred Location': o.preferred_location_desc || '',
+        });
+      }
+    });
+
+    // Sheet 2: Dispatch Orders (from order_dispatch_items)
+    const dispatchData = [];
+    filtered.forEach(o => {
       if (o.dispatchItems && o.dispatchItems.length > 0) {
         o.dispatchItems.forEach(dispatchItem => {
-          data.push({
+          dispatchData.push({
             'Order Id': o.order_id,
             'Dealer Name': o.dealer_name || '',
             'Dealer Company Name': o.dealer_company_name || '',
             'Product': dispatchItem.product_name || o.product_name || '',
             'Status': o.order_status || '',
-            'Order Date': formatDateTime(o.order_date),
-            'Order Bags': dispatchItem.dispatch_bags || '',
-            'Order Qty': dispatchItem.dispatch_quantity || '',
             'Dispatch Date': dispatchItem.created_at ? formatDateTime(dispatchItem.created_at) : '',
             'Dispatch Bags': dispatchItem.dispatch_bags || '',
             'Dispatch Qty': dispatchItem.dispatch_quantity || '',
@@ -1591,66 +1626,15 @@ function App() {
             'Actual Location': dispatchItem.actual_loading_location_code || '',
           });
         });
-      } else if (o.items && o.items.length > 0) {
-        // If order has items but no dispatch, export order items
-        o.items.forEach(item => {
-          data.push({
-            'Order Id': o.order_id,
-            'Dealer Name': o.dealer_name || '',
-            'Dealer Company Name': o.dealer_company_name || '',
-            'Product': item.product_name || '',
-            'Status': o.order_status || '',
-            'Order Date': formatDateTime(o.order_date),
-            'Order Bags': item.order_bags || '',
-            'Order Qty': item.order_quantity || '',
-            'Dispatch Date': '',
-            'Dispatch Bags': '',
-            'Dispatch Qty': '',
-            'Dispatch Notes': '',
-            'Delivery Location': o.party_address || o.delivery_location || '',
-            'Vehicle No': '',
-            'Driver Name': '',
-            'Driver Phone': '',
-            'Bilty No': '',
-            'Party': o.party_name || '',
-            'Address': o.party_address || '',
-            'Load Type': o.load_type_desc || '',
-            'Preferred Location': o.preferred_location_desc || '',
-            'Actual Location': '',
-          });
-        });
-      } else {
-        // Fallback for orders without items or dispatch
-        data.push({
-          'Order Id': o.order_id,
-          'Dealer Name': o.dealer_name || '',
-          'Dealer Company Name': o.dealer_company_name || '',
-          'Product': o.product_name || '',
-          'Status': o.order_status || '',
-          'Order Date': formatDateTime(o.order_date),
-          'Order Bags': o.order_bags || '',
-          'Order Qty': parseFloat(o.quantity || 0).toFixed(3),
-          'Dispatch Date': '',
-          'Dispatch Bags': '',
-          'Dispatch Qty': '',
-          'Dispatch Notes': '',
-          'Delivery Location': o.party_address || o.delivery_location || '',
-          'Vehicle No': '',
-          'Driver Name': '',
-          'Driver Phone': '',
-          'Bilty No': '',
-          'Party': o.party_name || '',
-          'Address': o.party_address || '',
-          'Load Type': o.load_type_desc || '',
-          'Preferred Location': o.preferred_location_desc || '',
-          'Actual Location': '',
-        });
       }
     });
-    const ws = XLSX.utils.json_to_sheet(data);
+
+    const ws1 = XLSX.utils.json_to_sheet(ordersData);
+    const ws2 = XLSX.utils.json_to_sheet(dispatchData);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, IS_ADMIN_OR_OFFICE ? 'All Orders' : 'My Orders');
-    XLSX.writeFile(wb, IS_ADMIN_OR_OFFICE ? 'All_Orders_Dispatch.xlsx' : 'My_Orders.xlsx');
+    XLSX.utils.book_append_sheet(wb, ws1, 'Orders');
+    XLSX.utils.book_append_sheet(wb, ws2, 'Dispatch Orders');
+    XLSX.writeFile(wb, IS_ADMIN_OR_OFFICE ? 'All_Orders.xlsx' : 'My_Orders.xlsx');
   };
 
   return (

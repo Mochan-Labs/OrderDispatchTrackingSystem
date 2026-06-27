@@ -423,10 +423,10 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
       const items = await itemsRes.json();
       setDispatchItems(Array.isArray(items) ? items : []);
 
-      // Reset form
+      // Reset form (but preserve warehouse location for next item)
       setDispatchItemForm({
         product_id: '',
-        actual_loading_location_code: '',
+        actual_loading_location_code: dispatchItemForm.actual_loading_location_code,
         warehouse_available_qty: '',
         dispatch_bags: '',
         dispatch_vehicle_number: '',
@@ -1132,13 +1132,13 @@ function DispatchModal({ order, loadingLocations, onSubmit, onClose, notify, onR
                       <button
                         type="submit"
                         disabled={creatingItem}
-                        className="btn btn-primary"
+                        className="btn btn-outline-primary"
                         style={{ gridColumn: '1 / -1' }}
                       >
                         {creatingItem ? (
-                          <><span className="spinner-border spinner-border-sm me-1"></span>Creating...</>
+                          <><span className="spinner-border spinner-border-sm me-1"></span>Adding...</>
                         ) : (
-                          '✅ Add Dispatch Items'
+                          '➕ Add Item'
                         )}
                       </button>
                     </form>
@@ -2524,9 +2524,47 @@ function App() {
   };
 
   const exportDispatcherExcel = async () => {
-    const data = [];
+    // Sheet 1: Orders (from dealer_order_items)
+    const ordersData = [];
 
-    // Fetch dispatch items for all orders with dispatch_id
+    orders.forEach(o => {
+      const items = o.items && Array.isArray(o.items) ? o.items : [];
+      if (items.length > 0) {
+        items.forEach(item => {
+          ordersData.push({
+            'Order Id': o.order_id,
+            'Dealer Name': o.dealer_name || '',
+            'Dealer Company Name': o.dealer_company_name || '',
+            'Product': item.product_name || '',
+            'Order Date': fmt(o.order_date),
+            'Order Bags': item.order_bags || '',
+            'Order Qty': item.order_quantity || '',
+            'Delivery Location': o.party_address || o.delivery_location || '',
+            'Party': o.party_name || '',
+            'Address': o.party_address || '',
+            'Load Type': o.load_type_desc || '',
+            'Preferred Location': o.preferred_location_desc || '',
+          });
+        });
+      } else {
+        ordersData.push({
+          'Order Id': o.order_id,
+          'Dealer Name': o.dealer_name || '',
+          'Dealer Company Name': o.dealer_company_name || '',
+          'Product': o.product_name || '',
+          'Order Date': fmt(o.order_date),
+          'Order Bags': '',
+          'Order Qty': '',
+          'Delivery Location': o.party_address || o.delivery_location || '',
+          'Party': o.party_name || '',
+          'Address': o.party_address || '',
+          'Load Type': o.load_type_desc || '',
+          'Preferred Location': o.preferred_location_desc || '',
+        });
+      }
+    });
+
+    // Sheet 2: Dispatch Orders (from order_dispatch_items)
     const dispatchItemsMap = {};
     for (const o of orders.filter(o => o.dispatch_id)) {
       try {
@@ -2539,22 +2577,17 @@ function App() {
       }
     }
 
+    const dispatchData = [];
     orders.forEach(o => {
-      const items = o.items && Array.isArray(o.items) ? o.items : [];
       const dispatchItems = dispatchItemsMap[o.order_id] || [];
-
-      // If order has dispatch items, export each dispatch item as a separate row
       if (dispatchItems.length > 0) {
         dispatchItems.forEach(dispatchItem => {
-          data.push({
+          dispatchData.push({
             'Order Id': o.order_id,
             'Dealer Name': o.dealer_name || '',
             'Dealer Company Name': o.dealer_company_name || '',
             'Product': dispatchItem.product_name || o.product_name || '',
             'Status': o.order_status || '',
-            'Order Date': fmt(o.order_date),
-            'Order Bags': dispatchItem.dispatch_bags || '',
-            'Order Qty': dispatchItem.dispatch_quantity || '',
             'Dispatch Date': dispatchItem.created_at ? fmt(dispatchItem.created_at) : '',
             'Dispatch Bags': dispatchItem.dispatch_bags || '',
             'Dispatch Qty': dispatchItem.dispatch_quantity || '',
@@ -2571,66 +2604,14 @@ function App() {
             'Actual Location': dispatchItem.actual_loading_location_code || '',
           });
         });
-      } else if (items.length > 0) {
-        // If order has items but no dispatch, export order items
-        items.forEach(item => {
-          data.push({
-            'Order Id': o.order_id,
-            'Dealer Name': o.dealer_name || '',
-            'Dealer Company Name': o.dealer_company_name || '',
-            'Product': item.product_name || '',
-            'Status': o.order_status || '',
-            'Order Date': fmt(o.order_date),
-            'Order Bags': item.order_bags || '',
-            'Order Qty': item.order_quantity || '',
-            'Dispatch Date': '',
-            'Dispatch Bags': '',
-            'Dispatch Qty': '',
-            'Dispatch Notes': '',
-            'Delivery Location': o.party_address || o.delivery_location || '',
-            'Vehicle No': '',
-            'Driver Name': '',
-            'Driver Phone': '',
-            'Bilty No': '',
-            'Party': o.party_name || '',
-            'Address': o.party_address || '',
-            'Load Type': o.load_type_desc || '',
-            'Preferred Location': o.preferred_location_desc || '',
-            'Actual Location': '',
-          });
-        });
-      } else {
-        // Fallback for orders without items or dispatch
-        data.push({
-          'Order Id': o.order_id,
-          'Dealer Name': o.dealer_name || '',
-          'Dealer Company Name': o.dealer_company_name || '',
-          'Product': o.product_name || '',
-          'Status': o.order_status || '',
-          'Order Date': fmt(o.order_date),
-          'Order Bags': '',
-          'Order Qty': '',
-          'Dispatch Date': '',
-          'Dispatch Bags': '',
-          'Dispatch Qty': '',
-          'Dispatch Notes': '',
-          'Delivery Location': o.party_address || o.delivery_location || '',
-          'Vehicle No': '',
-          'Driver Name': '',
-          'Driver Phone': '',
-          'Bilty No': '',
-          'Party': o.party_name || '',
-          'Address': o.party_address || '',
-          'Load Type': o.load_type_desc || '',
-          'Preferred Location': o.preferred_location_desc || '',
-          'Actual Location': '',
-        });
       }
     });
 
-    const ws = XLSX.utils.json_to_sheet(data);
+    const ws1 = XLSX.utils.json_to_sheet(ordersData);
+    const ws2 = XLSX.utils.json_to_sheet(dispatchData);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Dispatcher Orders');
+    XLSX.utils.book_append_sheet(wb, ws1, 'Orders');
+    XLSX.utils.book_append_sheet(wb, ws2, 'Dispatch Orders');
     XLSX.writeFile(wb, 'Dispatcher_Orders.xlsx');
   };
 
