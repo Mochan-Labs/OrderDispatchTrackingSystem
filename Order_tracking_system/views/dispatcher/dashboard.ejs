@@ -1751,9 +1751,11 @@ function DealerOrdersModal({ orders, dealerId, onClose, onBack, onAccept, onDisp
   );
 }
 
-function DispatchedDealersModal({ orders, onSelectDealer, onClose }) {
-  // Include all dispatch-related statuses (not FULLY_DISPATCHED as those are complete)
-  const dispatchedOrders = orders.filter(o => ['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(o.order_status));
+function DispatchedDealersModal({ orders, onSelectDealer, onClose, statusFilter = 'FULLY_DISPATCHED' }) {
+  // Filter by specific status or show all dispatch-related statuses
+  const dispatchedOrders = statusFilter
+    ? orders.filter(o => o.order_status === statusFilter)
+    : orders.filter(o => ['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(o.order_status));
   const dealerMap = {};
 
   dispatchedOrders.forEach(o => {
@@ -1771,12 +1773,17 @@ function DispatchedDealersModal({ orders, onSelectDealer, onClose }) {
 
   const dealers = Object.values(dealerMap).sort((a, b) => b.count - a.count);
 
+  const headerText = statusFilter === 'PARTIALLY_DISPATCHED'
+    ? '📦 Dealers with Partially Dispatched Orders'
+    : '✅ Dealers with Fully Dispatched Orders';
+  const headerBg = statusFilter === 'PARTIALLY_DISPATCHED' ? '#0dcaf0' : '#198754';
+
   return (
     <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.55)' }}>
       <div className="modal-dialog modal-dialog-centered">
         <div className="modal-content">
-          <div className="modal-header" style={{ background: '#198754', color: '#fff' }}>
-            <h5 className="modal-title">🚛 Dealers with Dispatched Orders</h5>
+          <div className="modal-header" style={{ background: headerBg, color: '#fff' }}>
+            <h5 className="modal-title">{headerText}</h5>
             <button type="button" className="btn-close btn-close-white" onClick={onClose}></button>
           </div>
           <div className="modal-body">
@@ -1811,25 +1818,29 @@ function DispatchedDealersModal({ orders, onSelectDealer, onClose }) {
   );
 }
 
-function DealerDispatchedOrdersModal({ orders, dealerId, onClose, onBack, onView, onDispatch }) {
+function DealerDispatchedOrdersModal({ orders, dealerId, onClose, onBack, onView, onDispatch, statusFilter = 'FULLY_DISPATCHED' }) {
   const dispatchedOrders = orders
-    .filter(o => o.dealer_id === dealerId && ['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(o.order_status))
+    .filter(o => o.dealer_id === dealerId && (statusFilter ? o.order_status === statusFilter : ['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(o.order_status)))
     .sort((a, b) => new Date(b.dispatch_created_at) - new Date(a.dispatch_created_at));
 
   const dealerName = dispatchedOrders[0]?.dealer_login_name || dispatchedOrders[0]?.dealer_company_name || dispatchedOrders[0]?.dealer_name || `Dealer #${dealerId}`;
+  const titleText = statusFilter === 'PARTIALLY_DISPATCHED'
+    ? `📦 Partially Dispatched Orders — ${dealerName}`
+    : `✅ Fully Dispatched Orders — ${dealerName}`;
+  const headerBg = statusFilter === 'PARTIALLY_DISPATCHED' ? '#0dcaf0' : '#198754';
 
   return (
     <div className="modal d-block" tabIndex="-1" style={{ background: 'rgba(0,0,0,0.55)' }}>
       <div className="modal-dialog modal-dialog-centered modal-lg">
         <div className="modal-content">
-          <div className="modal-header d-flex align-items-center justify-content-between" style={{ background: '#198754', color: '#fff' }}>
+          <div className="modal-header d-flex align-items-center justify-content-between" style={{ background: headerBg, color: '#fff' }}>
             <div className="d-flex align-items-center gap-2">
               {onBack && (
                 <button type="button" className="btn btn-sm btn-light" onClick={onBack} title="Go back to dealers">
                   ← Back
                 </button>
               )}
-              <h5 className="modal-title mb-0">🚛 Dispatched Orders — {dealerName}</h5>
+              <h5 className="modal-title mb-0">{titleText}</h5>
             </div>
             <button type="button" className="btn-close btn-close-white" onClick={onClose}></button>
           </div>
@@ -2417,6 +2428,10 @@ function App() {
   const [refreshing,      setRefreshing]      = useState(false);
   const [showPendingDealers, setShowPendingDealers] = useState(false);
   const [selectedDealerId, setSelectedDealerId] = useState(null);
+  const [showPartialDealers, setShowPartialDealers] = useState(false);
+  const [selectedPartialDealerId, setSelectedPartialDealerId] = useState(null);
+  const [showFullyDispatchedDealers, setShowFullyDispatchedDealers] = useState(false);
+  const [selectedFullyDispatchedDealerId, setSelectedFullyDispatchedDealerId] = useState(null);
   const [showDispatchedDealers, setShowDispatchedDealers] = useState(false);
   const [selectedDispatchedDealerId, setSelectedDispatchedDealerId] = useState(null);
   const [startDate,       setStartDate]       = useState(defaults.start);
@@ -2698,9 +2713,11 @@ function App() {
     dealerGroups[o.dealer_id].push(o);
   });
 
-  const totalPending   = orders.filter(o => o.order_status === 'ORDER_PLACED' || o.order_status === 'ACCEPTED').length;
-  const totalDispatched = orders.filter(o => ['PARTIALLY_DISPATCHED', 'DISPATCH_ON_HOLD', 'FULLY_DISPATCHED'].includes(o.order_status)).length;
-  const totalDealers   = Object.keys(dealerGroups).length;
+  const totalPending            = orders.filter(o => o.order_status === 'ORDER_PLACED' || o.order_status === 'ACCEPTED').length;
+  const totalPartiallyDispatched = orders.filter(o => o.order_status === 'PARTIALLY_DISPATCHED').length;
+  const totalFullyDispatched    = orders.filter(o => o.order_status === 'FULLY_DISPATCHED').length;
+  const totalDispatched         = totalPartiallyDispatched + totalFullyDispatched;
+  const totalDealers            = Object.keys(dealerGroups).length;
 
   return (
     <div>
@@ -2764,6 +2781,70 @@ function App() {
             setViewOrder(order);
           }}
           
+        />
+      )}
+
+      {showPartialDealers && (
+        <DispatchedDealersModal
+          orders={orders}
+          statusFilter="PARTIALLY_DISPATCHED"
+          onSelectDealer={dealerId => {
+            setSelectedPartialDealerId(dealerId);
+            setShowPartialDealers(false);
+          }}
+          onClose={() => setShowPartialDealers(false)}
+        />
+      )}
+
+      {selectedPartialDealerId && !viewOrder && (
+        <DealerDispatchedOrdersModal
+          orders={orders}
+          dealerId={selectedPartialDealerId}
+          statusFilter="PARTIALLY_DISPATCHED"
+          onClose={() => setSelectedPartialDealerId(null)}
+          onBack={() => {
+            setSelectedPartialDealerId(null);
+            setShowPartialDealers(true);
+          }}
+          onDispatch={order => {
+            setDispatchModal(order);
+            setSelectedPartialDealerId(null);
+          }}
+          onView={order => {
+            setViewOrder(order);
+          }}
+        />
+      )}
+
+      {showFullyDispatchedDealers && (
+        <DispatchedDealersModal
+          orders={orders}
+          statusFilter="FULLY_DISPATCHED"
+          onSelectDealer={dealerId => {
+            setSelectedFullyDispatchedDealerId(dealerId);
+            setShowFullyDispatchedDealers(false);
+          }}
+          onClose={() => setShowFullyDispatchedDealers(false)}
+        />
+      )}
+
+      {selectedFullyDispatchedDealerId && !viewOrder && (
+        <DealerDispatchedOrdersModal
+          orders={orders}
+          dealerId={selectedFullyDispatchedDealerId}
+          statusFilter="FULLY_DISPATCHED"
+          onClose={() => setSelectedFullyDispatchedDealerId(null)}
+          onBack={() => {
+            setSelectedFullyDispatchedDealerId(null);
+            setShowFullyDispatchedDealers(true);
+          }}
+          onDispatch={order => {
+            setDispatchModal(order);
+            setSelectedFullyDispatchedDealerId(null);
+          }}
+          onView={order => {
+            setViewOrder(order);
+          }}
         />
       )}
 
@@ -2931,15 +3012,31 @@ function App() {
         </div>
         <div className="col-6 col-md-3 col-lg-2">
           <div
-            className={`card border-0 shadow-sm count-card ${totalDispatched === 0 ? 'disabled' : ''}`}
-            style={{ borderLeft: '4px solid #198754' }}
-            title="Last 3 days dispatched orders"
-            onClick={() => totalDispatched > 0 && setShowDispatchedDealers(true)}
+            className={`card border-0 shadow-sm count-card ${totalPartiallyDispatched === 0 ? 'disabled' : ''}`}
+            style={{ borderLeft: '4px solid #0dcaf0' }}
+            title="Last 3 days Partially Dispatched Orders"
+            onClick={() => totalPartiallyDispatched > 0 && setShowPartialDealers(true)}
           >
             <div className="card-body d-flex align-items-center gap-3 py-3">
-              <span style={{ fontSize: '1.8rem' }}>🚛</span>
+              <span style={{ fontSize: '1.8rem' }}>📦</span>
               <div>
-                <div className="fs-4 fw-bold">{totalDispatched}</div>
+                <div className="fs-4 fw-bold">{totalPartiallyDispatched}</div>
+                <div className="text-muted small">Partial</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="col-6 col-md-3 col-lg-2">
+          <div
+            className={`card border-0 shadow-sm count-card ${totalFullyDispatched === 0 ? 'disabled' : ''}`}
+            style={{ borderLeft: '4px solid #198754' }}
+            title="Last 3 days Fully Dispatched Orders"
+            onClick={() => totalFullyDispatched > 0 && setShowFullyDispatchedDealers(true)}
+          >
+            <div className="card-body d-flex align-items-center gap-3 py-3">
+              <span style={{ fontSize: '1.8rem' }}>✅</span>
+              <div>
+                <div className="fs-4 fw-bold">{totalFullyDispatched}</div>
                 <div className="text-muted small">Dispatched</div>
               </div>
             </div>
