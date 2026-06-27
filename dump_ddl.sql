@@ -514,6 +514,7 @@ DROP FUNCTION IF EXISTS public.fn_update_inventory_dispatch_out() CASCADE;
 DROP FUNCTION IF EXISTS odts.fn_update_inventory_dispatch_out() CASCADE;
 --
 -- recreate function
+/*
 CREATE OR REPLACE FUNCTION odts.fn_update_inventory_dispatch_out()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -529,6 +530,7 @@ BEGIN
   RETURN NEW;
 END;
 $function$;
+*/
 --
 -- recreate the function
 CREATE OR REPLACE FUNCTION odts.fn_update_inventory_stock_in()
@@ -560,10 +562,12 @@ FOR EACH ROW
 EXECUTE FUNCTION odts.fn_update_inventory_stock_in();
 --
 -- recreate the trigger
+/*
 CREATE TRIGGER trg_warehouse_dispatch_out
 AFTER INSERT ON odts.order_dispatch_items
 FOR EACH ROW
 EXECUTE FUNCTION odts.fn_update_inventory_dispatch_out();
+*/
 --
 -- to Verify the function and trigger
 SELECT pg_get_functiondef(oid) 

@@ -688,6 +688,7 @@ router.get('/api/orders/:orderId/dispatch-items', ensureAuth, async (req, res) =
        LEFT JOIN odts.product_master pm ON pm.product_id = odi.dispatch_product_id
        LEFT JOIN odts.warehouse_master wm ON wm.warehouse_id = odi.dispatch_warehouse_id
        WHERE odi.dispatch_id IN (SELECT dispatch_id FROM odts.order_dispatch WHERE order_id = $1)
+       AND odi.dispatch_product_id IS NOT NULL
        ORDER BY odi.created_at DESC`,
       [orderId]
     );
@@ -815,13 +816,15 @@ router.post('/api/orders/:orderId/dispatch-items', ensureAuth, async (req, res) 
       const dispatchItem = result.rows[0];
 
       // Auto-create warehouse_stock entry for dispatch (marks as 'out')
-      const stockResult = await client.query(`
+      // Note: We create warehouse_stock entry WITHOUT warehouse_stock_items
+      // The dispatch_out trigger on order_dispatch_items already handles inventory deduction correctly
+      // Creating warehouse_stock_items would cause double decrement (dispatch_out - dispatch_bags, then stock_in - (-dispatch_bags))
+      await client.query(`
         INSERT INTO odts.warehouse_stock (
           warehouse_id, warehouse_stock_date, warehouse_vehicle_number,
           warehouse_driver_name, warehouse_driver_phone, warehouse_bilty_number,
           warehouse_stock_notes, is_dispatch_out, created_by, updated_by
         ) VALUES ($1, NOW(), $2, $3, $4, $5, $6, TRUE, $7, $7)
-        RETURNING warehouse_stock_id
       `, [
         dispatch_warehouse_id ? parseInt(dispatch_warehouse_id) : null,
         dispatch_vehicle_number,
@@ -831,15 +834,6 @@ router.post('/api/orders/:orderId/dispatch-items', ensureAuth, async (req, res) 
         `Dispatch Item #${dispatchItem.dispatch_items_id} - Order #${orderId}`,
         req.session.user.id
       ]);
-
-      if (stockResult.rows.length > 0) {
-        const warehouse_stock_id = stockResult.rows[0].warehouse_stock_id;
-        // Create warehouse_stock_items entry
-        await client.query(`
-          INSERT INTO odts.warehouse_stock_items (warehouse_stock_id, warehouse_product_id, warehouse_product_qty, created_by, updated_by)
-          VALUES ($1, $2, $3, $4, $4)
-        `, [warehouse_stock_id, product_id ? parseInt(product_id) : null, dispatch_bags, req.session.user.id]);
-      }
 
       await client.query('COMMIT');
 
