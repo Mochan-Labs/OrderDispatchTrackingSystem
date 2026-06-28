@@ -85,27 +85,41 @@
             </div>
 
             <div id="new-party-section" class="d-none">
-              <div class="row g-2">
-                <div class="col-12">
-                  <input id="new_party_name" type="text" class="form-control" placeholder="Party / Company Name" autocomplete="off">
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <label class="form-label fw-semibold small">Party Code <span class="text-muted fw-normal">(optional)</span></label>
+                  <input id="new_party_code" name="new_party_code" type="text" class="form-control" placeholder="Auto-generated if empty" autocomplete="off">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label fw-semibold small">Company Name <span class="text-danger">*</span></label>
+                  <input id="new_party_company_name" name="new_party_company_name" type="text" class="form-control" placeholder="Company name" autocomplete="off">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label fw-semibold small">Party Name <span class="text-muted fw-normal">(optional)</span></label>
+                  <input id="new_party_name" name="new_party_name" type="text" class="form-control" placeholder="Contact person name" autocomplete="off">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label fw-semibold small">Phone <span class="text-danger">*</span> <span class="text-muted fw-normal">(10 digits only)</span></label>
+                  <input id="new_party_phone" name="new_party_phone" type="tel" class="form-control" placeholder="10-digit number" maxlength="10" pattern="[0-9]{10}" title="Phone must be exactly 10 digits (0-9 only)">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label fw-semibold small">Email <span class="text-muted fw-normal">(optional)</span></label>
+                  <input id="new_party_email" name="new_party_email" type="email" class="form-control" placeholder="Email address">
                 </div>
                 <div class="col-12">
-                  <label class="form-label fw-semibold small">Phone <span class="text-muted fw-normal">(10 digits only)</span></label>
-                  <input id="new_party_phone" type="tel" class="form-control" placeholder="10-digit number" maxlength="10" pattern="[0-9]{10}" title="Party phone must be exactly 10 digits (0-9 only)">
-                </div>
-                <div class="col-12">
-                  <input id="new_party_address" type="text" class="form-control" placeholder="Address">
+                  <label class="form-label fw-semibold small">Address <span class="text-danger">*</span></label>
+                  <textarea id="new_party_address" name="new_party_address" class="form-control" rows="2" placeholder="Delivery address"></textarea>
                 </div>
               </div>
             </div>
           </div>
 
-          <div class="col-md-6">
+          <div id="contact_number_section" class="col-md-6">
             <label for="contact_number" class="form-label fw-semibold">Contact Number <span class="text-muted fw-normal small">(10 digits only)</span></label>
             <input id="contact_number" type="tel" class="form-control" placeholder="10-digit number" maxlength="10" pattern="[0-9]{10}" title="Contact number must be exactly 10 digits (0-9 only)">
           </div>
 
-          <div class="col-12">
+          <div id="delivery_address_section" class="col-12">
             <label for="delivery_address" class="form-label fw-semibold">Delivery Address</label>
             <textarea id="delivery_address" class="form-control" rows="2" placeholder="Auto-filled or enter manually"></textarea>
           </div>
@@ -499,6 +513,8 @@
     const isNew = this.checked;
     document.getElementById('existing-party-section').classList.toggle('d-none', isNew);
     document.getElementById('new-party-section').classList.toggle('d-none', !isNew);
+    document.getElementById('contact_number_section').classList.toggle('d-none', isNew);
+    document.getElementById('delivery_address_section').classList.toggle('d-none', isNew);
     document.getElementById('party_select').required = !isNew;
     if (isNew) {
       document.getElementById('party_id').value = '';
@@ -717,19 +733,28 @@
 
       // Create new party if needed
       if (isNew) {
-        const newName = document.getElementById('new_party_name').value.trim();
-        if (!newName) throw new Error('Party name is required.');
+        const partyCode = document.getElementById('new_party_code').value.trim();
+        const partyCompanyName = document.getElementById('new_party_company_name').value.trim();
+        const partyName = document.getElementById('new_party_name').value.trim();
         const partyPhone = document.getElementById('new_party_phone').value.trim();
-        if (partyPhone && !isValidPhone(partyPhone)) {
-          throw new Error('Party phone number must be exactly 10 digits.');
-        }
+        const partyEmail = document.getElementById('new_party_email').value.trim();
+        const partyAddress = document.getElementById('new_party_address').value.trim();
+
+        if (!partyCompanyName) throw new Error('Company name is required.');
+        if (!partyPhone) throw new Error('Phone number is required.');
+        if (!isValidPhone(partyPhone)) throw new Error('Phone number must be exactly 10 digits.');
+        if (!partyAddress) throw new Error('Address is required.');
+
         const pRes = await fetch('/api/dealer/parties', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify({
-            party_company_name: newName,
-            party_phone:        partyPhone,
-            party_address:      document.getElementById('new_party_address').value.trim(),
+            party_code:          partyCode || null,
+            party_company_name:  partyCompanyName,
+            party_name:          partyName || null,
+            party_phone:         partyPhone,
+            party_email:         partyEmail || null,
+            party_address:       partyAddress,
           }),
         });
         const pData = await pRes.json();

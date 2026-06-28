@@ -738,20 +738,26 @@ router.post('/api/dealer/parties', ensureDealer, async (req, res) => {
     const dealer_id = req.session.user.dealer_id;
     if (!dealer_id) return res.status(400).json({ error: 'No dealer linked to this account.' });
 
-    const { party_company_name, party_phone, party_address } = req.body;
-    if (!party_company_name) return res.status(400).json({ error: 'Party name is required.' });
+    const { party_code, party_company_name, party_name, party_phone, party_email, party_address } = req.body;
+    if (!party_company_name) return res.status(400).json({ error: 'Party company name is required.' });
+    if (!party_phone) return res.status(400).json({ error: 'Party phone is required.' });
+    if (!party_address) return res.status(400).json({ error: 'Party address is required.' });
 
-    const autoCode = party_company_name.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)
-                     + '_' + Date.now().toString().slice(-5);
+    // Use provided party_code or auto-generate
+    const finalPartyCode = party_code && party_code.trim()
+      ? party_code.trim()
+      : party_company_name.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)
+        + '_' + Date.now().toString().slice(-5);
+
     const userId = req.session.user.id;
     if (!userId) return res.status(400).json({ error: 'User session invalid.' });
 
     const result = await pool.query(
       `INSERT INTO odts.dealer_party_master
-         (dealer_id, party_code, party_company_name, party_phone, party_address, party_is_active_flag, created_by, created_at, updated_by, updated_at)
-       VALUES ($1, $2, $3, $4, $5, TRUE, $6, NOW(), $6, NOW())
-       RETURNING party_id, party_company_name, party_phone, party_address`,
-      [dealer_id, autoCode, party_company_name, party_phone || null, party_address || null, userId]
+         (dealer_id, party_code, party_company_name, party_name, party_phone, party_email, party_address, party_is_active_flag, created_by, created_at, updated_by, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, $8, NOW(), $8, NOW())
+       RETURNING party_id, party_code, party_company_name, party_name, party_phone, party_email, party_address`,
+      [dealer_id, finalPartyCode, party_company_name, party_name || null, party_phone, party_email || null, party_address, userId]
     );
     res.status(201).json(result.rows[0]);
   } catch (e) {
