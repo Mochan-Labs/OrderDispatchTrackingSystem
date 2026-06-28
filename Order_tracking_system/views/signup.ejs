@@ -235,10 +235,11 @@
       setEnabled(warehouseSelect, hasRole && (isStockManager || isDispatcher));
       warehouseSelect.required = hasRole && (isStockManager || isDispatcher);
 
-      otherRoleFields.style.display = (hasRole && !isDealer && !isStockManager && !isDispatcher) ? '' : 'none';
-      setEnabled(userName, hasRole && !isDealer && !isStockManager && !isDispatcher);
-      setEnabled(userPhone, hasRole && !isDealer && !isStockManager && !isDispatcher);
-      setEnabled(userEmail, hasRole && !isDealer && !isStockManager && !isDispatcher);
+      const showOtherFields = hasRole && !isStockManager;
+      otherRoleFields.style.display = showOtherFields ? '' : 'none';
+      setEnabled(userName, showOtherFields);
+      setEnabled(userPhone, showOtherFields);
+      setEnabled(userEmail, showOtherFields);
 
       dealerUsersSection.style.display = hasRole ? '' : 'none';
       if (!isDealer) {
@@ -283,6 +284,41 @@
         applyRoleRules();
         renderDealerUsers();
       }, 0);
+    });
+
+    signupForm.addEventListener('submit', (e) => {
+      const roleName = selectedRoleName();
+      const isDealerRole = roleName === 'DEALER';
+      const isStockManagerRole = roleName === 'STOCK_MANAGER';
+      const isDispatcherRole = roleName === 'DISPATCHER';
+
+      if (isDealerRole && !dealerSelect.value) {
+        e.preventDefault();
+        alert('Please select a dealer from the dropdown.');
+        dealerLookup.focus();
+        return false;
+      }
+
+      if ((isStockManagerRole || isDispatcherRole) && !warehouseSelect.value) {
+        e.preventDefault();
+        alert('Please select a warehouse.');
+        warehouseSelect.focus();
+        return false;
+      }
+
+      if (!userLoginName.value.trim()) {
+        e.preventDefault();
+        alert('User login name is required.');
+        userLoginName.focus();
+        return false;
+      }
+
+      if (!passwordInput.value.trim()) {
+        e.preventDefault();
+        alert('Password is required.');
+        passwordInput.focus();
+        return false;
+      }
     });
 
     syncDealerLookupFromId();

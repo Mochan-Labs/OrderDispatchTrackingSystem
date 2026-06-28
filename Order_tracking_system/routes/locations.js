@@ -25,9 +25,13 @@ router.get('/master/warehouse', ensureAuth, (req, res) => {
 router.get('/api/warehouses', ensureAdmin, async (req, res) => {
   try {
     const r = await pool.query(`
-      SELECT warehouse_id, warehouse_code, warehouse_name, warehouse_type, warehouse_ui_label, warehouse_ui_order, created_at, updated_at, created_by, updated_by
-      FROM odts.warehouse_master
-      ORDER BY warehouse_type, warehouse_ui_order, warehouse_name
+      SELECT
+        w.warehouse_id, w.warehouse_code, w.warehouse_name, w.warehouse_type,
+        w.warehouse_ui_label, w.warehouse_ui_order, w.created_at, w.updated_at,
+        w.created_by, w.updated_by, u.user_login_name as updated_by_user
+      FROM odts.warehouse_master w
+      LEFT JOIN odts.user_master u ON u.user_id = w.updated_by
+      ORDER BY w.warehouse_type, w.warehouse_ui_order, w.warehouse_name
     `);
     res.json(r.rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
