@@ -101,7 +101,7 @@ function toOrderShape(row) {
   let dispatchItems = [];
   if (rawDispatchItems) {
     const parsed = typeof rawDispatchItems === 'string' ? JSON.parse(rawDispatchItems) : rawDispatchItems;
-    if (Array.isArray(parsed)) dispatchItems = parsed.filter(i => i && i.dispatch_bags);
+    if (Array.isArray(parsed)) dispatchItems = parsed.filter(i => i && (i.dispatch_bags || i.dispatch_driver_name || i.dispatch_vehicle_number));
   }
 
   const order = {
@@ -133,6 +133,11 @@ function toOrderShape(row) {
     order_date:              row.order_date,
     dispatch:                null,
     dispatchItems:           dispatchItems,
+    // Flat dispatch fields for sales/office views that read driver name directly off the order
+    dispatch_driver_name:    dispatchItems.length > 0 ? (dispatchItems[0].dispatch_driver_name || null) : null,
+    dispatch_driver_phone:   dispatchItems.length > 0 ? (dispatchItems[0].dispatch_driver_phone || null) : null,
+    dispatch_vehicle_number: dispatchItems.length > 0 ? (dispatchItems[0].dispatch_vehicle_number || null) : null,
+    dispatch_bilty_number:   dispatchItems.length > 0 ? (dispatchItems[0].dispatch_bilty_number || null) : null,
   };
   if (row.dispatch_id) {
     order.dispatch = {

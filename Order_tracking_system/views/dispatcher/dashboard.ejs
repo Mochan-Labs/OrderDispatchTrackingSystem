@@ -1,4 +1,4 @@
-<%- include('../partials/header') %>
+﻿<%- include('../partials/header') %>
 <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
 <script>
@@ -32,6 +32,20 @@ window.__chromium_devtools_metrics_reporter = () => ({});
   .count-card.disabled:hover {
     transform: none !important;
     box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075) !important;
+  }
+
+  /* Order card action buttons */
+  .order-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    align-items: center;
+    margin-top: 0.75rem;
+  }
+  .order-card-actions .btn { white-space: nowrap; font-size: 0.8rem; }
+  @media (max-width: 576px) {
+    .order-card-actions { flex-direction: column; align-items: stretch; }
+    .order-card-actions .btn { width: 100%; text-align: center; font-size: 0.78rem; }
   }
 </style>
 
@@ -1298,7 +1312,7 @@ function ViewOrderModal({ order, onClose, onBack }) {
     setLoadingDispatchItems(true);
     fetch(`/api/orders/${order.order_id}/dispatch-items`, { credentials: 'include' })
       .then(r => r.json())
-      .then(data => setDispatchItems(Array.isArray(data) ? data.filter(i => i.dispatch_bags) : []))
+      .then(data => setDispatchItems(Array.isArray(data) ? data.filter(i => i.dispatch_bags || i.dispatch_driver_name || i.dispatch_vehicle_number) : []))
       .catch(() => setDispatchItems([]))
       .finally(() => setLoadingDispatchItems(false));
   }, [order && order.order_id, order && order.dispatch_id]);
@@ -1654,7 +1668,7 @@ function DealerOrdersModal({ orders, dealerId, onClose, onBack, onAccept, onDisp
                         </div>
                       </div>
 
-                      <div className="d-flex gap-2 flex-wrap">
+                      <div className="order-card-actions">
                         <button className="btn btn-sm btn-outline-primary" title="View order" onClick={() => onView(order)}>
                           👁️ View
                         </button>
@@ -1886,7 +1900,7 @@ function DealerDispatchedOrdersModal({ orders, dealerId, onClose, onBack, onView
                       </div>
                     </div>
                     {/* Action buttons */}
-                    <div className="d-flex gap-2 flex-wrap" style={{ marginTop: '0.75rem' }}>
+                    <div className="order-card-actions" style={{ marginTop: '0.75rem' }}>
                       {onView && (
                         <button className="btn btn-sm btn-outline-primary" onClick={() => onView(order)}>
                           👁️ View
@@ -2089,7 +2103,7 @@ function OverdueOrdersModal({ orders, dealerId, onClose, onBack, onView, onAccep
                         <div>{o.party_company_name || o.party_name_col || o.party_name || '—'}</div>
                       </div>
                     </div>
-                    <div className="d-flex gap-2 flex-wrap">
+                    <div className="order-card-actions">
                       <button className="btn btn-sm btn-outline-primary" onClick={() => onView(o)}>👁️ View</button>
                       {!readOnlyMode && (
                         <>
@@ -2202,7 +2216,7 @@ function TotalOrdersListModal({ orders, onClose, onView, onAccept, onDispatch })
                         <div>{o.party_company_name || o.party_name_col || o.party_name || '—'}</div>
                       </div>
                     </div>
-                    <div className="d-flex gap-2 flex-wrap">
+                    <div className="order-card-actions">
                       <button className="btn btn-sm btn-outline-primary" onClick={() => onView(o)}>👁️ View</button>
                       {!readOnlyMode && (
                         <>
@@ -2278,7 +2292,7 @@ function TotalDealerOrdersModal({ orders, dealerId, onClose, onBack, onView, onA
                       </div>
                     </div>
                     {/* Action buttons */}
-                    <div className="d-flex gap-2 flex-wrap" style={{ marginTop: '0.75rem' }}>
+                    <div className="order-card-actions" style={{ marginTop: '0.75rem' }}>
                       <button className="btn btn-sm btn-outline-primary" onClick={() => onView(order)}>
                         👁️ View
                       </button>
