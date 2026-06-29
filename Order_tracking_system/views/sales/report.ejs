@@ -25,7 +25,6 @@ function SalesReport() {
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [expanded, setExpanded] = useState({});
   const [dealerSearch, setDealerSearch] = useState('');
-  const [monthlyTrend, setMonthlyTrend] = useState([]);
   const chartRef = useRef(null);
   const chartInstance = useRef(null);
   const trendChartRef = useRef(null);
@@ -84,20 +83,8 @@ function SalesReport() {
     });
   };
 
-  const loadAnnualTrend = async (y) => {
-    try {
-      const r = await fetch(`/api/sales/reports/annual?year=${y}`, { credentials: 'include' });
-      if (!r.ok) throw new Error(await r.text());
-      const data = await r.json();
-      setMonthlyTrend(data.months || []);
-    } catch (e) {
-      console.error('Failed to load annual trend:', e.message);
-    }
-  };
-
   useEffect(() => {
     loadReport(year, month);
-    loadAnnualTrend(year);
   }, [year, month]);
 
   useEffect(() => {
@@ -133,39 +120,50 @@ function SalesReport() {
   }, [dealers]);
 
   useEffect(() => {
-    if (monthlyTrend.length === 0 || !trendChartRef.current || !window.Chart) return;
+    if (products.length === 0 || !trendChartRef.current || !window.Chart) return;
     if (trendChartInstance.current) trendChartInstance.current.destroy();
 
     try {
+      // Get unique products and sum quantities
+      const productMap = {};
+      products.forEach(p => {
+        if (!productMap[p.product_name]) {
+          productMap[p.product_name] = 0;
+        }
+        productMap[p.product_name] += parseFloat(p.total_qty) || 0;
+      });
+
+      const productLabels = Object.keys(productMap);
+      const productQtys = Object.values(productMap);
+
       const ctx = trendChartRef.current.getContext('2d');
       trendChartInstance.current = new window.Chart(ctx, {
-        type: 'line',
+        type: 'bar',
         data: {
-          labels: monthlyTrend.map(m => m.month_name),
+          labels: productLabels,
           datasets: [{
-            label: 'Monthly Sales (MT)',
-            data: monthlyTrend.map(m => parseFloat(m.total_qty) || 0),
-            borderColor: '#198754',
-            backgroundColor: 'rgba(25, 135, 84, 0.1)',
-            borderWidth: 2,
-            tension: 0.4,
-            fill: true,
-            pointRadius: 4,
-            pointHoverRadius: 6,
-            pointBackgroundColor: '#198754'
+            label: 'Quantity Sold (MT)',
+            data: productQtys,
+            backgroundColor: '#0dcaf0',
+            borderColor: '#0d6efd',
+            borderWidth: 1,
           }]
         },
         options: {
+          indexAxis: 'x',
           responsive: true,
           maintainAspectRatio: true,
-          plugins: { legend: { position: 'top' } },
+          plugins: {
+            legend: { display: true },
+            title: { display: true, text: `Products Sold — ${monthNames[month - 1]} ${year}` }
+          },
           scales: { y: { beginAtZero: true, title: { display: true, text: 'Quantity (MT)' } } }
         }
       });
     } catch (e) {
-      console.error('Error rendering trend chart:', e);
+      console.error('Error rendering product chart:', e);
     }
-  }, [monthlyTrend]);
+  }, [products, month, year]);
 
   const handlePrevMonth = () => {
     if (month === 1) {
@@ -240,8 +238,8 @@ function SalesReport() {
   const totalOrders = dealers.reduce((sum, d) => sum + d.total_orders, 0);
   const totalQty = dealers.reduce((sum, d) => sum + parseFloat(d.total_qty || 0), 0);
 
-  const getDealerProducts = (dealerId) => products.filter(p => p.dealer_id === dealerId);
-  const getDealerDaily = (dealerId) => daily.filter(d => d.dealer_id === dealerId);
+  const getDealerProducts = (dealerId) => products.filter(p => String(p.dealer_id) === String(dealerId));
+  const getDealerDaily = (dealerId) => daily.filter(d => String(d.dealer_id) === String(dealerId));
 
   return (
     <div>
@@ -311,13 +309,13 @@ function SalesReport() {
         <div className="col-12 col-lg-6">
           <div className="card shadow-sm">
             <div className="card-header bg-white py-3">
-              <h6 className="mb-0 fw-semibold">📈 Monthly Sales Trend (This Year)</h6>
+              <h6 className="mb-0 fw-semibold">📦 Products Sold (This Month)</h6>
             </div>
             <div className="card-body">
-              {monthlyTrend.length > 0 ? (
+              {products.length > 0 ? (
                 <canvas ref={trendChartRef} style={{ maxHeight: '300px' }}></canvas>
               ) : (
-                <div className="text-center text-muted py-4">No trend data</div>
+                <div className="text-center text-muted py-4">No product data for this month</div>
               )}
             </div>
           </div>
@@ -376,13 +374,13 @@ function SalesReport() {
                           <span style={{ fontSize: '1.2rem' }}>{expanded[d.dealer_id] ? '▼' : '▶'}</span>
                         </td>
                         <td className="fw-semibold">{d.dealer_name}</td>
-                        <td className="text-muted small">{d.user_login_name || '—'}</td>
+                        <td className="text-muted small text-center">{d.dealer_code || '—'}</td>
                         <td className="text-center">{d.total_orders}</td>
                         <td className="text-center fw-semibold">{parseFloat(d.total_qty).toFixed(2)}</td>
-                        <td className="text-center text-primary">{d.placed_count}</td>
-                        <td className="text-center text-info">{d.accepted_count}</td>
-                        <td className="text-center text-success">{d.dispatched_count}</td>
-                        <td className="text-center text-danger">{d.on_hold_count}</td>
+                        <td className="text-center text-primary" title="Placed">{d.placed_count || 0}</td>
+                        <td className="text-center text-info" title="Accepted">{d.accepted_count || 0}</td>
+                        <td className="text-center text-success" title="Dispatched">{d.dispatched_count || 0}</td>
+                        <td className="text-center text-danger" title="On Hold">{d.on_hold_count || 0}</td>
                       </tr>
                       {expanded[d.dealer_id] && (
                         <tr>
@@ -430,7 +428,7 @@ function SalesReport() {
                                       {getDealerDaily(d.dealer_id).length > 0 ? (
                                         getDealerDaily(d.dealer_id).map((dy, idx) => (
                                           <tr key={idx}>
-                                            <td>{dy.order_day}</td>
+                                            <td>{new Date(dy.order_day).toLocaleDateString('en-IN')}</td>
                                             <td className="text-center">{dy.order_count}</td>
                                             <td className="text-center">{parseFloat(dy.total_qty).toFixed(2)}</td>
                                           </tr>

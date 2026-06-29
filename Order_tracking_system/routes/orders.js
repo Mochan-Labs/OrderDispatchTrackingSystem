@@ -541,29 +541,25 @@ router.get('/api/sales/reports/monthly', ensureSalesOfficer, async (req, res) =>
     const reportYear = year ? parseInt(year) : now.getFullYear();
     const reportMonth = month ? parseInt(month) : now.getMonth() + 1;
 
-    // Query 1: Dealer summary with status breakdown
-    // Maps: Code = first user.user_login_name for each dealer (by user_id ASC)
+    // Query 1: Dealer summary with status breakdown for this month
     const dealerSummary = await pool.query(`
       SELECT
-        d.dealer_id, d.dealer_name,
-        (SELECT user_login_name FROM odts.user_master u WHERE u.dealer_id = d.dealer_id ORDER BY u.user_id LIMIT 1) AS user_login_name,
-        d.dealer_monthly_target,
+        d.dealer_id,
+        d.dealer_name,
+        d.dealer_code,
         COUNT(DISTINCT o.order_id)::integer AS total_orders,
-        COALESCE(SUM(oi.order_quantity), 0)::numeric AS total_qty,
-        COUNT(DISTINCT CASE WHEN o.order_status = 'ORDER_PLACED'  THEN o.order_id END)::integer AS placed_count,
-        COUNT(DISTINCT CASE WHEN o.order_status = 'ACCEPTED'      THEN o.order_id END)::integer AS accepted_count,
-        COUNT(DISTINCT CASE WHEN o.order_status = 'DISPATCHED'    THEN o.order_id END)::integer AS dispatched_count,
-        COUNT(DISTINCT CASE WHEN o.order_status = 'ON_HOLD'       THEN o.order_id END)::integer AS on_hold_count
-      FROM odts.dealer_master d
-      LEFT JOIN odts.dealer_orders o
-        ON o.dealer_id = d.dealer_id
-        AND DATE_TRUNC('month', o.order_date) = make_date($1, $2, 1)
-      LEFT JOIN odts.dealer_order_items oi ON oi.order_id = o.order_id
-      GROUP BY d.dealer_id, d.dealer_name, d.dealer_monthly_target
-      ORDER BY d.dealer_name
+        SUM(oi.order_quantity)::numeric AS total_qty,
+        COUNT(DISTINCT CASE WHEN o.order_status = 'ORDER_PLACED' THEN o.order_id END)::integer AS placed_count,
+        COUNT(DISTINCT CASE WHEN o.order_status = 'ACCEPTED' THEN o.order_id END)::integer AS accepted_count,
+        COUNT(DISTINCT CASE WHEN o.order_status = 'DISPATCHED' THEN o.order_id END)::integer AS dispatched_count,
+        COUNT(DISTINCT CASE WHEN o.order_status = 'ON_HOLD' THEN o.order_id END)::integer AS on_hold_count
+      FROM odts.dealer_orders o
+      JOIN odts.dealer_order_items oi ON oi.order_id = o.order_id
+      JOIN odts.dealer_master d ON d.dealer_id = o.dealer_id
+      WHERE DATE_TRUNC('month', o.order_date) = make_date($1, $2, 1)
+      GROUP BY d.dealer_id, d.dealer_name, d.dealer_code
+      ORDER BY total_qty DESC
     `, [reportYear, reportMonth]);
-
-    console.log('DEBUG dealerSummary.rows[0]:', dealerSummary.rows[0]);
 
     // Query 2: Product breakdown per dealer
     const productBreakdown = await pool.query(`
@@ -615,10 +611,10 @@ router.get('/api/sales/reports/annual', ensureSalesOfficer, async (req, res) => 
       SELECT
         EXTRACT(MONTH FROM o.order_date)::integer AS month,
         TO_CHAR(o.order_date, 'MMM') AS month_name,
-        COALESCE(SUM(oi.order_quantity), 0)::numeric AS total_qty,
+        SUM(oi.order_quantity)::numeric AS total_qty,
         COUNT(DISTINCT o.order_id)::integer AS total_orders
       FROM odts.dealer_orders o
-      LEFT JOIN odts.dealer_order_items oi ON oi.order_id = o.order_id
+      JOIN odts.dealer_order_items oi ON oi.order_id = o.order_id
       WHERE EXTRACT(YEAR FROM o.order_date) = $1
       GROUP BY EXTRACT(MONTH FROM o.order_date), TO_CHAR(o.order_date, 'MMM')
       ORDER BY EXTRACT(MONTH FROM o.order_date)
