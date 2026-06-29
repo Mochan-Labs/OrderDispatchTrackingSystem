@@ -64,9 +64,11 @@
               </div>
               <div class="col-md-6">
                 <label class="form-label">Password <span class="text-danger">*</span></label>
-                <div class="input-group">
-                  <input id="password" name="password" type="password" class="form-control" disabled required />
-                  <button class="btn btn-outline-secondary" type="button" id="togglePassword">Show</button>
+                <div class="password-input-group">
+                  <input id="password" name="password" type="password" class="form-control password-field" disabled required />
+                  <button class="btn-password-toggle" type="button" id="togglePassword" onclick="togglePassword(this)">
+                    <span class="password-icon">👁️</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -264,13 +266,15 @@
       renderDealerUsers();
     });
 
-    togglePasswordBtn.addEventListener('click', () => {
+    togglePasswordBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const icon = togglePasswordBtn.querySelector('.password-icon');
       if (passwordInput.type === 'password') {
         passwordInput.type = 'text';
-        togglePasswordBtn.textContent = 'Hide';
+        icon.textContent = '🙈';
       } else {
         passwordInput.type = 'password';
-        togglePasswordBtn.textContent = 'Show';
+        icon.textContent = '👁️';
       }
     });
 
@@ -278,7 +282,7 @@
       setTimeout(() => {
         signupForm.reset();
         passwordInput.type = 'password';
-        togglePasswordBtn.textContent = 'Show';
+        togglePasswordBtn.querySelector('.password-icon').textContent = '👁️';
         dealerLookup.value = '';
         warehouseSelect.value = '';
         applyRoleRules();

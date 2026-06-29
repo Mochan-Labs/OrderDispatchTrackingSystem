@@ -65,15 +65,12 @@ function ActiveSessions() {
       'User ID': r.user_id,
       'Login Name': r.login_name,
       'Name': r.username,
-      'Email': r.email,
-      'Mobile': r.mobile,
       'Role': r.role,
-      'Dealer Code': r.dealer_code || '',
       'Dealer Company': r.dealer_company_name || '',
       'Login Method': r.login_method,
       'Login At': r.login_at ? new Date(r.login_at).toLocaleString('en-IN') : '',
-      'Session (so far)': fmtSecs(r.session_seconds),
-      'IP Address': r.ip_address
+      'Logout At': r.logout_at ? new Date(r.logout_at).toLocaleString('en-IN') : '',
+      'Session (so far)': fmtSecs(r.session_seconds)
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -105,15 +102,12 @@ function ActiveSessions() {
                       <th>#</th>
                       <th>Login Name</th>
                       <th>Name</th>
-                      <th>Email</th>
-                      <th>Mobile</th>
                       <th>Role</th>
-                      <th>Dealer Code</th>
                       <th>Company</th>
                       <th>Method</th>
                       <th>Login At</th>
+                      <th>Logout At</th>
                       <th>Duration</th>
-                      <th>IP Address</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -122,15 +116,12 @@ function ActiveSessions() {
                         <td className="text-muted small">{i + 1}</td>
                         <td className="small text-monospace">{r.login_name || '—'}</td>
                         <td className="fw-semibold">{r.username || '—'}</td>
-                        <td className="small">{r.email || '—'}</td>
-                        <td className="small">{r.mobile || '—'}</td>
                         <td>{roleBadge(r.role)}</td>
-                        <td className="small">{r.dealer_code || '—'}</td>
                         <td className="small">{r.dealer_company_name || '—'}</td>
                         <td>{methodBadge(r.login_method)}</td>
                         <td className="small">{fmtDt(r.login_at)}</td>
+                        <td className="small">{fmtDt(r.logout_at)}</td>
                         <td className="small">{fmtSecs(r.session_seconds)}</td>
-                        <td className="small text-monospace">{r.ip_address || '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -183,17 +174,13 @@ function LoginReport() {
     const data = rows.map(r => ({
       'Login Name': r.login_name,
       'Name': r.username,
-      'Email': r.email,
-      'Mobile': r.mobile,
       'Role': r.role,
-      'Dealer Code': r.dealer_code || '',
       'Dealer Company': r.dealer_company_name || '',
       'Login Method': r.login_method,
       'Login Status': r.login_status,
       'Login At':  r.login_at  ? new Date(r.login_at).toLocaleString('en-IN')  : '',
       'Logout At': r.logout_at ? new Date(r.logout_at).toLocaleString('en-IN') : '',
-      'Session Duration': fmtSecs(r.session_seconds),
-      'IP Address': r.ip_address
+      'Session Duration': fmtSecs(r.session_seconds)
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -282,17 +269,13 @@ function LoginReport() {
                   <th>#</th>
                   <th>Login Name</th>
                   <th>Name</th>
-                  <th>Email</th>
-                  <th>Mobile</th>
                   <th>Role</th>
-                  <th>Dealer Code</th>
                   <th>Company</th>
                   <th>Method</th>
                   <th>Status</th>
                   <th>Login At</th>
                   <th>Logout At</th>
                   <th>Duration</th>
-                  <th>IP Address</th>
                 </tr>
               </thead>
               <tbody>
@@ -301,17 +284,13 @@ function LoginReport() {
                     <td className="text-muted small">{i + 1}</td>
                     <td className="small text-monospace">{r.login_name || '—'}</td>
                     <td className="fw-semibold">{r.username || '—'}</td>
-                    <td className="small">{r.email || '—'}</td>
-                    <td className="small">{r.mobile || '—'}</td>
                     <td>{roleBadge(r.role)}</td>
-                    <td className="small">{r.dealer_code || '—'}</td>
                     <td className="small">{r.dealer_company_name || '—'}</td>
                     <td>{methodBadge(r.login_method)}</td>
                     <td>{statusBadge(r.login_status)}</td>
                     <td className="small">{fmtDt(r.login_at)}</td>
                     <td className="small">{fmtDt(r.logout_at)}</td>
                     <td className="small">{fmtSecs(r.session_seconds)}</td>
-                    <td className="small text-monospace">{r.ip_address || '—'}</td>
                   </tr>
                 ))}
               </tbody>
