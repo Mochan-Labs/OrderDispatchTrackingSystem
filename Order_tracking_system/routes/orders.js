@@ -407,11 +407,11 @@ router.get('/admin/dealer-orders', ensureAdmin, async (req, res) => {
   const endDate = req.query.endDate || new Date().toISOString().split('T')[0];
   res.render('orders/index', {
     user: req.session.user,
-    isAdmin: false,
-    canViewAllOrders: true,  // Can view all dealers' orders
-    isAdminOrOffice: false,  // No special admin actions (like Edit Dispatch)
+    isAdmin: true,
+    canViewAllOrders: true,
+    isAdminOrOffice: true,
     isDispatcher: false,
-    isAdminDealerOrdersView: true,  // Distinguish from regular orders view
+    isAdminDealerOrdersView: true,
     defaultStartDate: startDate,
     defaultEndDate: endDate
   });
