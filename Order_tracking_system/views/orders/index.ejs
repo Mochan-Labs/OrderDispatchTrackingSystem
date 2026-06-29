@@ -36,6 +36,26 @@ console.log('[Window vars set]', { _IS_ADMIN: window._IS_ADMIN, _IS_DISPATCHER: 
     transform: none !important;
     box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075) !important;
   }
+
+  /* ACTION column: fixed width, buttons stack vertically */
+  .orders-action-cell {
+    width: 120px !important;
+    min-width: 120px !important;
+    vertical-align: middle !important;
+  }
+  .orders-action-cell .btn,
+  .orders-action-cell .badge {
+    width: 100% !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+    font-size: 0.78rem !important;
+    padding: 0.25rem 0.4rem !important;
+  }
+  @media (max-width: 768px) {
+    .orders-action-cell { width: 100px !important; min-width: 100px !important; }
+    .orders-action-cell .btn,
+    .orders-action-cell .badge { font-size: 0.72rem !important; }
+  }
 </style>
 
 <script type="text/babel">
@@ -1952,8 +1972,8 @@ function App() {
                           <span className="text-muted small">—</span>
                         )}
                       </td>}
-                      <td className="text-nowrap" style={{ fontSize: '0.85rem' }}>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                      <td className="orders-action-cell" style={{ fontSize: '0.85rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'stretch' }}>
                           {/* View Button */}
                           <button className="btn btn-sm btn-outline-primary me-1" onClick={() => setViewOrder(o)}>
                             👁️ View

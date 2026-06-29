@@ -688,7 +688,6 @@ router.get('/api/orders/:orderId/dispatch-items', ensureAuth, async (req, res) =
        LEFT JOIN odts.product_master pm ON pm.product_id = odi.dispatch_product_id
        LEFT JOIN odts.warehouse_master wm ON wm.warehouse_id = odi.dispatch_warehouse_id
        WHERE odi.dispatch_id IN (SELECT dispatch_id FROM odts.order_dispatch WHERE order_id = $1)
-       AND odi.dispatch_product_id IS NOT NULL
        ORDER BY odi.created_at DESC`,
       [orderId]
     );
