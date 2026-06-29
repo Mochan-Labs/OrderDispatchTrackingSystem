@@ -551,8 +551,8 @@ router.get('/api/sales/reports/monthly', ensureSalesOfficer, async (req, res) =>
         SUM(oi.order_quantity)::numeric AS total_qty,
         COUNT(DISTINCT CASE WHEN o.order_status = 'ORDER_PLACED' THEN o.order_id END)::integer AS placed_count,
         COUNT(DISTINCT CASE WHEN o.order_status = 'ACCEPTED' THEN o.order_id END)::integer AS accepted_count,
-        COUNT(DISTINCT CASE WHEN o.order_status = 'DISPATCHED' THEN o.order_id END)::integer AS dispatched_count,
-        COUNT(DISTINCT CASE WHEN o.order_status = 'ON_HOLD' THEN o.order_id END)::integer AS on_hold_count
+        COUNT(DISTINCT CASE WHEN o.order_status IN ('DISPATCHED', 'FULLY_DISPATCHED', 'PARTIALLY_DISPATCHED') THEN o.order_id END)::integer AS dispatched_count,
+        COUNT(DISTINCT CASE WHEN o.order_status IN ('ON_HOLD', 'DISPATCH_ON_HOLD') THEN o.order_id END)::integer AS on_hold_count
       FROM odts.dealer_orders o
       JOIN odts.dealer_order_items oi ON oi.order_id = o.order_id
       JOIN odts.dealer_master d ON d.dealer_id = o.dealer_id

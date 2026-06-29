@@ -688,6 +688,9 @@ router.get('/api/orders/:orderId/dispatch-items', ensureAuth, async (req, res) =
        LEFT JOIN odts.product_master pm ON pm.product_id = odi.dispatch_product_id
        LEFT JOIN odts.warehouse_master wm ON wm.warehouse_id = odi.dispatch_warehouse_id
        WHERE odi.dispatch_id IN (SELECT dispatch_id FROM odts.order_dispatch WHERE order_id = $1)
+       AND odi.dispatch_product_id IS NOT NULL
+       AND odi.dispatch_bags IS NOT NULL
+       AND odi.dispatch_quantity IS NOT NULL
        ORDER BY odi.created_at DESC`,
       [orderId]
     );
@@ -724,8 +727,13 @@ router.post('/api/orders/:orderId/dispatch-items', ensureAuth, async (req, res) 
     } = req.body;
 
     // Validate required fields
-    if (!dispatch_bags || !dispatch_vehicle_number || !dispatch_driver_phone || !dispatch_bilty_number) {
-      return res.status(400).json({ error: 'Missing required fields: dispatch_bags, dispatch_vehicle_number, dispatch_driver_phone, dispatch_bilty_number' });
+    if (!dispatch_bags || !dispatch_vehicle_number || !dispatch_driver_phone || !dispatch_bilty_number || !product_id) {
+      return res.status(400).json({ error: 'Missing required fields: dispatch_bags, dispatch_vehicle_number, dispatch_driver_phone, dispatch_bilty_number, product_id' });
+    }
+
+    // Prevent empty/zero quantity dispatch
+    if (dispatch_quantity <= 0 || parseInt(dispatch_bags) <= 0) {
+      return res.status(400).json({ error: 'Dispatch quantity and bags must be greater than 0' });
     }
 
     // Get or create dispatch record for this order
@@ -828,7 +836,7 @@ router.post('/api/orders/:orderId/dispatch-items', ensureAuth, async (req, res) 
         dispatch_driver_name,
         dispatch_driver_phone,
         dispatch_bilty_number,
-        `Dispatch Item #${dispatchItem.dispatch_items_id} - Order #${orderId}`,
+        `Dispatch Item #${dispatchItem.dispatch_id} - Order #${orderId}`,
         req.session.user.id
       ]);
 
