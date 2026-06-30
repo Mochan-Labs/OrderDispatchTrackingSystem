@@ -822,6 +822,49 @@ router.post('/api/orders/:orderId/dispatch-items', ensureAuth, async (req, res) 
       const result = await client.query(insertQuery, insertParams);
       const dispatchItem = result.rows[0];
 
+      // Deduct dispatched bags from warehouse_stock and warehouse_inventory
+      if (dispatch_warehouse_id && product_id && parseInt(dispatch_bags) > 0) {
+        const warehouseId = parseInt(dispatch_warehouse_id);
+        const productIdInt = parseInt(product_id);
+        const bags = parseInt(dispatch_bags);
+
+        // Insert a negative stock entry to record the outward movement
+        await client.query(`
+          INSERT INTO odts.warehouse_stock (
+            warehouse_id, product_id, warehouse_product_qty,
+            warehouse_vehicle_number, warehouse_driver_name, warehouse_driver_phone,
+            warehouse_bilty_number, warehouse_stock_notes,
+            created_by, updated_by
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
+        `, [
+          warehouseId,
+          productIdInt,
+          -bags,  // negative = outward dispatch
+          dispatch_vehicle_number || null,
+          dispatch_driver_name || null,
+          dispatch_driver_phone || null,
+          dispatch_bilty_number || null,
+          `Dispatch out — Order #${orderId}`,
+          req.session.user.id
+        ]);
+
+        // Update warehouse_inventory current_qty (no upsert — use UPDATE then INSERT if missing)
+        const invUpdate = await client.query(`
+          UPDATE odts.warehouse_inventory
+          SET current_qty = current_qty - $3::integer,
+              last_updated = NOW()
+          WHERE warehouse_id = $1 AND product_id = $2
+        `, [warehouseId, productIdInt, bags]);
+
+        if (invUpdate.rowCount === 0) {
+          // No inventory row yet — create one with negative qty (shouldn't normally happen)
+          await client.query(`
+            INSERT INTO odts.warehouse_inventory (warehouse_id, product_id, current_qty, last_updated)
+            VALUES ($1, $2, -$3::integer, NOW())
+          `, [warehouseId, productIdInt, bags]);
+        }
+      }
+
       await client.query('COMMIT');
 
       // Calculate and update order status based on dispatch progress
