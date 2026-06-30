@@ -44,6 +44,9 @@ const { initializeS3 } = require('./services/s3Service');
     app.set('view engine', 'ejs');
     app.set('views', path.join(__dirname, 'views'));
 
+    // Disable ETags so API responses are never served from 304 cache
+    app.set('etag', false);
+
     // Pre-middleware logging for request size debugging
     app.use((req, _res, next) => {
       const contentLength = req.get('content-length');
