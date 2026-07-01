@@ -1979,15 +1979,15 @@ function App() {
                             👁️ View
                           </button>
 
-                          {/* Hold on ORDER_PLACED */}
-                          {o.order_status === 'ORDER_PLACED' && (
+                          {/* Hold on ORDER_PLACED — dealer only (admin has its own Hold below) */}
+                          {!IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
                             <button className="btn btn-sm btn-outline-secondary me-1" onClick={() => setHoldOrder(o)}>
                               ⏸️ Hold
                             </button>
                           )}
 
-                          {/* Edit on ORDER_PLACED */}
-                          {o.order_status === 'ORDER_PLACED' && (
+                          {/* Edit on ORDER_PLACED — dealer only (admin has its own Edit below) */}
+                          {!IS_ADMIN && o.order_status === 'ORDER_PLACED' && (
                             <button className="btn btn-sm btn-outline-info me-1" onClick={() => {
                               const editUrl = IS_ADMIN_DEALER_ORDERS_VIEW
                                 ? `/admin/dealer-orders?action=edit&id=${o.order_id}`
